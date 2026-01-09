@@ -1,0 +1,33 @@
+{
+  "name": "nnews",
+  "author": "pikaring",
+  "version": "2.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "NNEWS",
+    "uuid": "2a779ab5-f0c6-4d01-9dcd-9b4d51b0e991",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "diorite",
+      "flint"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "capabilities": [
+      "configurable"
+    ],
+    "messageKeys": [
+  "KEY_TITLE",
+  "KEY_NEWS"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}
