@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Watchface Settings</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background-color: #f0f0f0; }
+        h2 { color: #333; }
+        .section { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        select { width: 100%; padding: 10px; font-size: 16px; border-radius: 4px; border: 1px solid #ccc; }
+        button { 
+            width: 100%; padding: 12px; background-color: #ff4700; color: white; 
+            border: none; border-radius: 4px; font-size: 18px; font-weight: bold; cursor: pointer;
+        }
+        button:active { background-color: #cc3900; }
+    </style>
+</head>
+<body>
+
+    <h2>News Settings</h2>
+
+    <div class="section">
+        <p>Select News Source:</p>
+        <select id="news_url_select">
+            <option value="https://script.google.com/macros/s/.../exec?id=1iak...&name=NEWS">Japanese News (JA)</option>
+            <option value="https://script.google.com/macros/s/.../exec?id=1J6B...&name=NEWS">English News (EN)</option>
+        </select>
+    </div>
+
+    <button id="save_button">SAVE SETTINGS</button>
+
+    <script>
+        // 保存ボタンが押された時の処理
+        document.getElementById('save_button').onclick = function() {
+            var selectedUrl = document.getElementById('news_url_select').value;
+            
+            // Pebbleアプリ（スマホ側）に送るデータ
+            var config = {
+                'KEY_NEWS_URL': selectedUrl
+            };
+
+            // URLの末尾にある return_to パラメータを取得（pebblejs://close# へリダイレクトするため）
+            var return_to = getQueryParam('return_to', 'pebblejs://close#');
+            document.location = return_to + encodeURIComponent(JSON.stringify(config));
+        };
+
+        function getQueryParam(variable, defaultValue) {
+            var query = location.search.substring(1);
+            var vars = query.split('&');
+            for (var i = 0; i < vars.length; i++) {
+                var pair = vars[i].split('=');
+                if (pair[0] === variable) return decodeURIComponent(pair[1]);
+            }
+            return defaultValue;
+        }
+    </script>
+</body>
+</html>
