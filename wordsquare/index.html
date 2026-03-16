@@ -33,19 +33,21 @@
         return defaultValue || false;
       }
 
-      var saveButton = document.getElementById('save_button');
-      saveButton.addEventListener('click', function() {
-        var bgColor = document.getElementById('bg_color').value;
-        
-        var config = {
-          'KEY_BG_COLOR': parseInt(bgColor, 10)
-        };
+var saveButton = document.getElementById('save_button');
 
-        // Pebbleアプリへ返却
-        // return_to パラメータがある場合はそれを利用（iOS/Android互換性のため）
-        var return_to = getQueryParam('return_to', 'pebblejs://close#');
-        document.location = return_to + encodeURIComponent(JSON.stringify(config));
-      });
+saveButton.addEventListener('click', function() {
+
+  var bgColor = document.getElementById('bg_color').value;
+
+  var config = {
+    KEY_BG_COLOR: parseInt(bgColor, 10)
+  };
+
+  document.location =
+    "pebblejs://close#" +
+    encodeURIComponent(JSON.stringify(config));
+
+});
     </script>
   </body>
 </html>
