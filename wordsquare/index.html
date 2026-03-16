@@ -22,32 +22,23 @@
       </div>
     </div>
 
-    <script>
-      function getQueryParam(variable, defaultValue) {
-        var query = location.search.substring(1);
-        var vars = query.split('&');
-        for (var i = 0; i < vars.length; i++) {
-          var pair = vars[i].split('=');
-          if (pair[0] === variable) { return decodeURIComponent(pair[1]); }
-        }
-        return defaultValue || false;
-      }
+<script>
+  var saveButton = document.getElementById('save_button');
+  saveButton.addEventListener('click', function() {
+    var bgColor = document.getElementById('bg_color').value;
+    
+    // キー名を文字列ではなく、appinfo.jsonで定義した数値「10」に直接書き換えます
+    var config = {
+      "10": parseInt(bgColor, 10) 
+    };
 
-var saveButton = document.getElementById('save_button');
+    console.log('Sending config: ' + JSON.stringify(config));
 
-saveButton.addEventListener('click', function() {
-
-  var bgColor = document.getElementById('bg_color').value;
-
-  var config = {
-    KEY_BG_COLOR: parseInt(bgColor, 10)
-  };
-
-  document.location =
-    "pebblejs://close#" +
-    encodeURIComponent(JSON.stringify(config));
-
-});
-    </script>
+    // Pebbleアプリを閉じてデータを渡す
+    // 文字列として明示的に pebblejs://close# を指定
+    var url = "pebblejs://close#" + encodeURIComponent(JSON.stringify(config));
+    document.location.href = url;
+  });
+</script>
   </body>
 </html>
