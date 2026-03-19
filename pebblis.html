@@ -31,14 +31,17 @@
     </div>
     <script>
       $('#save_button').on('click', function() {
-        var config = {
-          'weight_lines': parseInt($('#weight_lines').val()),
-          'weight_height': parseInt($('#weight_height').val()),
-          'weight_holes': parseInt($('#weight_holes').val()),
-          'weight_bumpiness': parseInt($('#weight_bumpiness').val())
-        };
-        // Pebbleアプリに戻り、データを渡す
-        location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(config));
+        // HTML側の保存ボタン処理
+var config = {
+  "weight_lines": document.getElementById('weight_lines').value,
+  "weight_height": document.getElementById('weight_height').value,
+  "weight_holes": document.getElementById('weight_holes').value,
+  "weight_bumpiness": document.getElementById('weight_bumpiness').value
+};
+
+// オブジェクトを一度文字列(JSON)にしてからエンコードしてURLに付与
+var location = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(config));
+window.location.href = location;
       });
     </script>
   </div>
