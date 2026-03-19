@@ -29,21 +29,20 @@
       </div>
       <button id="save_button" data-theme="b">Save and Apply</button>
     </div>
-    <script>
-      $('#save_button').on('click', function() {
-        // HTML側の保存ボタン処理
-var config = {
-  "weight_lines": document.getElementById('weight_lines').value,
-  "weight_height": document.getElementById('weight_height').value,
-  "weight_holes": document.getElementById('weight_holes').value,
-  "weight_bumpiness": document.getElementById('weight_bumpiness').value
-};
+<script>
+  $('#save_button').on('click', function() {
+    var config = {
+      "weight_lines": document.getElementById('weight_lines').value,
+      "weight_height": document.getElementById('weight_height').value,
+      "weight_holes": document.getElementById('weight_holes').value,
+      "weight_bumpiness": document.getElementById('weight_bumpiness').value
+    };
 
-// オブジェクトを一度文字列(JSON)にしてからエンコードしてURLに付与
-var location = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(config));
-window.location.href = location;
-      });
-    </script>
+    // 変数名を return_url に変更（locationとの衝突回避）
+    var return_url = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(config));
+    window.location.href = return_url;
+  });
+</script>
   </div>
 </body>
 </html>
