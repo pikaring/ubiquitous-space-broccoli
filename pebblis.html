@@ -13,18 +13,22 @@
     <div data-role="content">
       <div class="ui-field-contain">
         <label for="weight_lines">消去ライン数 (得点重視):</label>
+        <label for="weight_lines">Number of lines to eliminate (score-focused):</label>
         <input type="range" name="weight_lines" id="weight_lines" value="50" min="1" max="100">
       </div>
       <div class="ui-field-contain">
         <label for="weight_height">低さ重視 (積み上げ防止):</label>
+        <label for="weight_height">Emphasis on low height (to prevent stacking):</label>
         <input type="range" name="weight_height" id="weight_height" value="50" min="1" max="100">
       </div>
       <div class="ui-field-contain">
         <label for="weight_holes">デッドスペース回避:</label>
+        <label for="weight_holes">Dead space avoidance:</label>
         <input type="range" name="weight_holes" id="weight_holes" value="50" min="1" max="100">
       </div>
       <div class="ui-field-contain">
         <label for="weight_bumpiness">平坦さ重視 (高低差):</label>
+        <label for="weight_bumpiness">Emphasis on flatness (elevation difference):</label>
         <input type="range" name="weight_bumpiness" id="weight_bumpiness" value="50" min="1" max="100">
       </div>
       <button id="save_button" data-theme="b">Save and Apply</button>
