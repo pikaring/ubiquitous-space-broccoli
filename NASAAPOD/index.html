@@ -1,40 +1,33 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"></head>
 <body>
-  <canvas id="c" width="144" height="168"></canvas>
-  <script>
-    // PebbleKit JSから呼ばれる関数
-    window.convertImage = function(imageUrl) {
-      return new Promise((resolve, reject) => {
-        const canvas = document.getElementById('c');
-        const ctx = canvas.getContext('2d');
-        const img = new Image();
-        img.crossOrigin = "Anonymous";
-        
-        img.onload = () => {
-          // 144x168にリサイズして描画
-          ctx.drawImage(img, 0, 0, 144, 168);
-          const { data } = ctx.getImageData(0, 0, 144, 168);
-          
-          // Pebbleの1bit形式(PBI形式)に変換: 144*168/8 = 3024バイト固定
-          const pbi = new Uint8Array(3024);
-          for (let i = 0; i < data.length / 4; i++) {
-            const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
-            // 輝度が128以上なら白(1)、以下なら黒(0)
-            const bright = (r * 0.299 + g * 0.587 + b * 0.114) > 128;
-            if (bright) {
-              pbi[Math.floor(i / 8)] |= (1 << (i % 8));
-            }
+  <canvas id="c" width="144" height="168" style="display:none;"></canvas>
+  <div id="result"></div> <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const imgUrl = urlParams.get('img');
+
+    if (imgUrl) {
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, 144, 168);
+        const { data } = ctx.getImageData(0, 0, 144, 168);
+        const pbi = new Uint8Array(3024);
+        for (let i = 0; i < data.length / 4; i++) {
+          const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+          // 輝度128を基準に2値化
+          if ((r * 0.299 + g * 0.587 + b * 0.114) > 128) {
+            pbi[Math.floor(i / 8)] |= (1 << (i % 8));
           }
-          // Uint8ArrayをBase64に変換して返す
-          const base64 = btoa(String.fromCharCode(...pbi));
-          resolve(base64);
-        };
-        img.onerror = reject;
-        img.src = imageUrl;
-      });
-    };
+        }
+        // Pebble JSが読み取りやすいように、結果だけを画面に書く
+        document.getElementById('result').innerText = btoa(String.fromCharCode(...pbi));
+      };
+      img.src = imgUrl;
+    }
   </script>
 </body>
 </html>
