@@ -1,44 +1,40 @@
 <!DOCTYPE html>
 <html>
+<head><meta charset="utf-8"></head>
 <body>
-  <canvas id="canvas" width="144" height="168" style="display:none;"></canvas>
+  <canvas id="c" width="144" height="168"></canvas>
   <script>
-    async function getPebbleBinary(imageUrl) {
-      const canvas = document.getElementById('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
-      img.crossOrigin = "Anonymous";
-      
-      return new Promise((resolve) => {
+    // PebbleKit JSから呼ばれる関数
+    window.convertImage = function(imageUrl) {
+      return new Promise((resolve, reject) => {
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        
         img.onload = () => {
-          // 1. アスペクト比を維持して中央をクロップ描画
+          // 144x168にリサイズして描画
           ctx.drawImage(img, 0, 0, 144, 168);
+          const { data } = ctx.getImageData(0, 0, 144, 168);
           
-          // 2. ピクセルデータの取得
-          const imageData = ctx.getImageData(0, 0, 144, 168);
-          const pixels = imageData.data;
-          
-          // 3. Pebble用1bitバイナリへの変換 (144*168 / 8 = 3024バイト固定)
-          const buffer = new Uint8Array(3024);
-          for (let i = 0; i < pixels.length / 4; i++) {
-            const r = pixels[i * 4];
-            const g = pixels[i * 4 + 1];
-            const b = pixels[i * 4 + 2];
-            
-            // 輝度計算による2値化（しきい値128）
-            const brightness = (r * 0.299 + g * 0.587 + b * 0.114);
-            if (brightness > 128) {
-              const byteIdx = Math.floor(i / 8);
-              const bitIdx = i % 8;
-              buffer[byteIdx] |= (1 << bitIdx);
+          // Pebbleの1bit形式(PBI形式)に変換: 144*168/8 = 3024バイト固定
+          const pbi = new Uint8Array(3024);
+          for (let i = 0; i < data.length / 4; i++) {
+            const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+            // 輝度が128以上なら白(1)、以下なら黒(0)
+            const bright = (r * 0.299 + g * 0.587 + b * 0.114) > 128;
+            if (bright) {
+              pbi[Math.floor(i / 8)] |= (1 << (i % 8));
             }
           }
-          // 4. Base64で出力（これをPebbleJSが受け取る）
-          resolve(btoa(String.fromCharCode.apply(null, buffer)));
+          // Uint8ArrayをBase64に変換して返す
+          const base64 = btoa(String.fromCharCode(...pbi));
+          resolve(base64);
         };
+        img.onerror = reject;
         img.src = imageUrl;
       });
-    }
+    };
   </script>
 </body>
 </html>
