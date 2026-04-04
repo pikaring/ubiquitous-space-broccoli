@@ -1,1 +1,44 @@
-
+<!DOCTYPE html>
+<html>
+<body>
+  <canvas id="canvas" width="144" height="168" style="display:none;"></canvas>
+  <script>
+    async function getPebbleBinary(imageUrl) {
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      
+      return new Promise((resolve) => {
+        img.onload = () => {
+          // 1. アスペクト比を維持して中央をクロップ描画
+          ctx.drawImage(img, 0, 0, 144, 168);
+          
+          // 2. ピクセルデータの取得
+          const imageData = ctx.getImageData(0, 0, 144, 168);
+          const pixels = imageData.data;
+          
+          // 3. Pebble用1bitバイナリへの変換 (144*168 / 8 = 3024バイト固定)
+          const buffer = new Uint8Array(3024);
+          for (let i = 0; i < pixels.length / 4; i++) {
+            const r = pixels[i * 4];
+            const g = pixels[i * 4 + 1];
+            const b = pixels[i * 4 + 2];
+            
+            // 輝度計算による2値化（しきい値128）
+            const brightness = (r * 0.299 + g * 0.587 + b * 0.114);
+            if (brightness > 128) {
+              const byteIdx = Math.floor(i / 8);
+              const bitIdx = i % 8;
+              buffer[byteIdx] |= (1 << bitIdx);
+            }
+          }
+          // 4. Base64で出力（これをPebbleJSが受け取る）
+          resolve(btoa(String.fromCharCode.apply(null, buffer)));
+        };
+        img.src = imageUrl;
+      });
+    }
+  </script>
+</body>
+</html>
