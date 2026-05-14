@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Pebblis AI Config</title>
+  <title>Visual Bar Timer Config</title>
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css">
   <script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
@@ -9,42 +10,65 @@
 </head>
 <body>
   <div data-role="page" id="main">
-    <div data-role="header"><h1>AI Weight Config</h1></div>
+    <div data-role="header"><h1>タイマー設定</h1></div>
     <div data-role="content">
+      
       <div class="ui-field-contain">
-        <label for="weight_lines">消去ライン数 (得点重視):</label>
-        <label for="weight_lines">Number of lines to eliminate (score-focused):</label>
-        <input type="range" name="weight_lines" id="weight_lines" value="50" min="1" max="100">
+        <label for="timer_mode">動作モード:</label>
+        <select name="timer_mode" id="timer_mode">
+          <option value="0">タイマーを使わない（秒を表示）</option>
+          <option value="1">残り時間を設定する</option>
+        </select>
       </div>
-      <div class="ui-field-contain">
-        <label for="weight_height">低さ重視 (積み上げ防止):</label>
-        <label for="weight_height">Emphasis on low height (to prevent stacking):</label>
-        <input type="range" name="weight_height" id="weight_height" value="50" min="1" max="100">
+
+      <div id="countdown_settings" style="display:none;">
+        <div class="ui-field-contain">
+          <label for="h">時間 (最大24時間):</label>
+          <input type="number" name="h" id="h" value="0" min="0" max="24">
+        </div>
+        <div class="ui-field-contain">
+          <label for="m">分:</label>
+          <input type="number" name="m" id="m" value="3" min="0" max="59">
+        </div>
+        <div class="ui-field-contain">
+          <label for="s">秒:</label>
+          <input type="number" name="s" id="s" value="0" min="0" max="59">
+        </div>
       </div>
-      <div class="ui-field-contain">
-        <label for="weight_holes">デッドスペース回避:</label>
-        <label for="weight_holes">Dead space avoidance:</label>
-        <input type="range" name="weight_holes" id="weight_holes" value="50" min="1" max="100">
-      </div>
-      <div class="ui-field-contain">
-        <label for="weight_bumpiness">平坦さ重視 (高低差):</label>
-        <label for="weight_bumpiness">Emphasis on flatness (elevation difference):</label>
-        <input type="range" name="weight_bumpiness" id="weight_bumpiness" value="50" min="1" max="100">
-      </div>
+
       <button id="save_button" data-theme="b">Save and Apply</button>
     </div>
-<script>
-  $('#save_button').on('click', function() {
-    var config = {
-      "weight_lines": document.getElementById('weight_lines').value,
-      "weight_height": document.getElementById('weight_height').value,
-      "weight_holes": document.getElementById('weight_holes').value,
-      "weight_bumpiness": document.getElementById('weight_bumpiness').value
-    };
 
-    // 変数名を return_url に変更（locationとの衝突回避）
-    var return_url = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(config));
-    window.location.href = return_url;
+<script>
+  // ドキュメント読み込み完了後の処理
+  $(document).on('pagecreate', '#main', function() {
+    
+    // ドロップダウンの変更を検知して入力欄の表示/非表示を切り替え
+    $('#timer_mode').on('change', function() {
+      if ($(this).val() == "1") {
+        $('#countdown_settings').show();
+      } else {
+        $('#countdown_settings').hide();
+      }
+    });
+
+    // 保存ボタンクリック時の処理
+    $('#save_button').on('click', function() {
+      var mode = parseInt($('#timer_mode').val(), 10) || 0;
+      var h = parseInt($('#h').val(), 10) || 0;
+      var m = parseInt($('#m').val(), 10) || 0;
+      var s = parseInt($('#s').val(), 10) || 0;
+
+      var config = {
+        "timer_mode": mode,
+        "total_seconds": (h * 3600) + (m * 60) + s
+      };
+
+      // pebblejs://close# を頭につけてアプリ側にデータを返す
+      var return_url = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(config));
+      window.location.href = return_url;
+    });
+
   });
 </script>
   </div>
