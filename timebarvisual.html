@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Visual Bar Timer Settings</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; background-color: #f0f0f0; padding: 20px; }
+    h1 { font-size: 1.2em; color: #333; }
+    .section { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .row { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; }
+    select, input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    .time-inputs { display: flex; gap: 5px; }
+    .time-inputs div { flex: 1; }
+    .save-btn { background: #ff4700; color: white; border: none; padding: 12px; width: 100%; border-radius: 4px; font-size: 1em; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>ウォッチフェイス設定</h1>
+
+  <div class="section">
+    <label>タイマーモード</label>
+    <select id="timer_mode">
+      <option value="0">タイマーを使わない（秒を表示）</option>
+      <option value="1">残り時間を設定する（カウントダウン）</option>
+    </select>
+  </div>
+
+  <div id="countdown_settings" class="section" style="display:none;">
+    <label>残り時間（最大24時間）</label>
+    <div class="time-inputs">
+      <div><input type="number" id="h" min="0" max="24" value="0"><span>時</span></div>
+      <div><input type="number" id="m" min="0" max="59" value="3"><span>分</span></div>
+      <div><input type="number" id="s" min="0" max="59" value="0"><span>秒</span></div>
+    </div>
+  </div>
+
+  <button class="save-btn" id="save_button">設定を保存</button>
+
+  <script>
+    const modeSelect = document.getElementById('timer_mode');
+    const countdownSettings = document.getElementById('countdown_settings');
+
+    modeSelect.onchange = function() {
+      countdownSettings.style.display = (this.value == "1") ? "block" : "none";
+    };
+
+    document.getElementById('save_button').onclick = function() {
+      const h = parseInt(document.getElementById('h').value) || 0;
+      const m = parseInt(document.getElementById('m').value) || 0;
+      const s = parseInt(document.getElementById('s').value) || 0;
+      
+      const config = {
+        timer_mode: parseInt(modeSelect.value),
+        total_seconds: (h * 3600) + (m * 60) + s
+      };
+
+      // Pebbleアプリにデータを返す
+      const return_to = "pebblejs://close#";
+      document.location = return_to + encodeURIComponent(JSON.stringify(config));
+    };
+  </script>
+</body>
+</html>
