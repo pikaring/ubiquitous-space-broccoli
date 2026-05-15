@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Timer Config</title>
-  <meta charset="UTF-8">
+  <title>Pebblis AI Config</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css">
   <script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
@@ -10,94 +9,42 @@
 </head>
 <body>
   <div data-role="page" id="main">
-    <div data-role="header"><h1>タイマー設定</h1></div>
+    <div data-role="header"><h1>AI Weight Config</h1></div>
     <div data-role="content">
-
       <div class="ui-field-contain">
-        <label for="timer_mode">モード選択:</label>
-        <select name="timer_mode" id="timer_mode">
-          <option value="0">ポモドーロモード</option>
-          <option value="1">ワーキングモード</option>
-        </select>
+        <label for="weight_lines">消去ライン数 (得点重視):</label>
+        <label for="weight_lines">Number of lines to eliminate (score-focused):</label>
+        <input type="range" name="weight_lines" id="weight_lines" value="50" min="1" max="100">
       </div>
-
-      <div id="pomodoro_settings">
-        <div class="ui-field-contain">
-          <label for="work_min">WORK時間 (分):</label>
-          <input type="number" name="work_min" id="work_min" value="25" min="1" max="120">
-        </div>
-        <div class="ui-field-contain">
-          <label for="rest_min">REST時間 (分):</label>
-          <input type="number" name="rest_min" id="rest_min" value="5" min="1" max="60">
-        </div>
+      <div class="ui-field-contain">
+        <label for="weight_height">低さ重視 (積み上げ防止):</label>
+        <label for="weight_height">Emphasis on low height (to prevent stacking):</label>
+        <input type="range" name="weight_height" id="weight_height" value="50" min="1" max="100">
       </div>
-
-      <div id="working_settings" style="display:none;">
-        <p style="font-size: 0.9em; color: #666;">各スケジュールを入力してください。</p>
-        <div class="ui-field-contain">
-          <label for="time_start">始業時刻:</label>
-          <input type="time" name="time_start" id="time_start" value="08:45">
-        </div>
-        <div class="ui-field-contain">
-          <label for="time_lunch_start">昼休み開始:</label>
-          <input type="time" name="time_lunch_start" id="time_lunch_start" value="12:00">
-        </div>
-        <div class="ui-field-contain">
-          <label for="time_lunch_end">昼休み終了:</label>
-          <input type="time" name="time_lunch_end" id="time_lunch_end" value="13:00">
-        </div>
-        <div class="ui-field-contain">
-          <label for="time_end">終業時刻:</label>
-          <input type="time" name="time_end" id="time_end" value="17:15">
-        </div>
+      <div class="ui-field-contain">
+        <label for="weight_holes">デッドスペース回避:</label>
+        <label for="weight_holes">Dead space avoidance:</label>
+        <input type="range" name="weight_holes" id="weight_holes" value="50" min="1" max="100">
       </div>
-
+      <div class="ui-field-contain">
+        <label for="weight_bumpiness">平坦さ重視 (高低差):</label>
+        <label for="weight_bumpiness">Emphasis on flatness (elevation difference):</label>
+        <input type="range" name="weight_bumpiness" id="weight_bumpiness" value="50" min="1" max="100">
+      </div>
       <button id="save_button" data-theme="b">Save and Apply</button>
     </div>
-
 <script>
-  // "HH:MM"形式の文字列を「分（0〜1439）」に変換する便利関数
-  function timeToMinutes(timeStr) {
-    if (!timeStr) return 0;
-    var parts = timeStr.split(':');
-    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-  }
+  $('#save_button').on('click', function() {
+    var config = {
+      "weight_lines": document.getElementById('weight_lines').value,
+      "weight_height": document.getElementById('weight_height').value,
+      "weight_holes": document.getElementById('weight_holes').value,
+      "weight_bumpiness": document.getElementById('weight_bumpiness').value
+    };
 
-  $(document).on('pagecreate', '#main', function() {
-    
-    // セレクトボックスの切り替えで入力エリアを出し分け
-    $('#timer_mode').on('change', function() {
-      if ($(this).val() == "0") {
-        $('#pomodoro_settings').show();
-        $('#working_settings').hide();
-      } else {
-        $('#pomodoro_settings').hide();
-        $('#working_settings').show();
-      }
-    });
-
-    // 保存ボタンの処理
-    $('#save_button').on('click', function() {
-      var mode = parseInt($('#timer_mode').val(), 10);
-      var config = { "timer_mode": mode };
-
-      if (mode === 0) {
-        // ポモドーロモードの場合：分を秒に変換して送信
-        config.work_sec = (parseInt($('#work_min').val(), 10) || 25) * 60;
-        config.rest_sec = (parseInt($('#rest_min').val(), 10) || 5) * 60;
-      } else {
-        // ワーキングモードの場合：HH:MMを「分」に変換して送信
-        config.time_start = timeToMinutes($('#time_start').val());
-        config.time_lunch_start = timeToMinutes($('#time_lunch_start').val());
-        config.time_lunch_end = timeToMinutes($('#time_lunch_end').val());
-        config.time_end = timeToMinutes($('#time_end').val());
-      }
-
-      // Pebbleにデータを送って閉じる
-      var return_url = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(config));
-      window.location.href = return_url;
-    });
-
+    // 変数名を return_url に変更（locationとの衝突回避）
+    var return_url = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(config));
+    window.location.href = return_url;
   });
 </script>
   </div>

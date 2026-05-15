@@ -1,65 +1,105 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Visual Bar Timer Settings</title>
+  <title>Timer Config</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body { font-family: sans-serif; background-color: #f0f0f0; padding: 20px; }
-    h1 { font-size: 1.2em; color: #333; }
-    .section { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .row { margin-bottom: 15px; }
-    label { display: block; margin-bottom: 5px; font-weight: bold; }
-    select, input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-    .time-inputs { display: flex; gap: 5px; }
-    .time-inputs div { flex: 1; }
-    .save-btn { background: #ff4700; color: white; border: none; padding: 12px; width: 100%; border-radius: 4px; font-size: 1em; cursor: pointer; }
-  </style>
+  <link rel="stylesheet" href="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css">
+  <script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
+  <script src="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.js"></script>
 </head>
 <body>
-  <h1>ウォッチフェイス設定</h1>
+  <div data-role="page" id="main">
+    <div data-role="header"><h1>タイマー設定</h1></div>
+    <div data-role="content">
 
-  <div class="section">
-    <label>タイマーモード</label>
-    <select id="timer_mode">
-      <option value="0">タイマーを使わない（秒を表示）</option>
-      <option value="1">残り時間を設定する（カウントダウン）</option>
-    </select>
-  </div>
+      <div class="ui-field-contain">
+        <label for="timer_mode">モード選択:</label>
+        <select name="timer_mode" id="timer_mode">
+          <option value="0">ポモドーロモード</option>
+          <option value="1">ワーキングモード</option>
+        </select>
+      </div>
 
-  <div id="countdown_settings" class="section" style="display:none;">
-    <label>残り時間（最大24時間）</label>
-    <div class="time-inputs">
-      <div><input type="number" id="h" min="0" max="24" value="0"><span>時</span></div>
-      <div><input type="number" id="m" min="0" max="59" value="3"><span>分</span></div>
-      <div><input type="number" id="s" min="0" max="59" value="0"><span>秒</span></div>
+      <div id="pomodoro_settings">
+        <div class="ui-field-contain">
+          <label for="work_min">WORK時間 (分):</label>
+          <input type="number" name="work_min" id="work_min" value="25" min="1" max="120">
+        </div>
+        <div class="ui-field-contain">
+          <label for="rest_min">REST時間 (分):</label>
+          <input type="number" name="rest_min" id="rest_min" value="5" min="1" max="60">
+        </div>
+      </div>
+
+      <div id="working_settings" style="display:none;">
+        <p style="font-size: 0.9em; color: #666;">各スケジュールを入力してください。</p>
+        <div class="ui-field-contain">
+          <label for="time_start">始業時刻:</label>
+          <input type="time" name="time_start" id="time_start" value="08:45">
+        </div>
+        <div class="ui-field-contain">
+          <label for="time_lunch_start">昼休み開始:</label>
+          <input type="time" name="time_lunch_start" id="time_lunch_start" value="12:00">
+        </div>
+        <div class="ui-field-contain">
+          <label for="time_lunch_end">昼休み終了:</label>
+          <input type="time" name="time_lunch_end" id="time_lunch_end" value="13:00">
+        </div>
+        <div class="ui-field-contain">
+          <label for="time_end">終業時刻:</label>
+          <input type="time" name="time_end" id="time_end" value="17:15">
+        </div>
+      </div>
+
+      <button id="save_button" data-theme="b">Save and Apply</button>
     </div>
+
+<script>
+  // "HH:MM"形式の文字列を「分（0〜1439）」に変換する便利関数
+  function timeToMinutes(timeStr) {
+    if (!timeStr) return 0;
+    var parts = timeStr.split(':');
+    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+  }
+
+  $(document).on('pagecreate', '#main', function() {
+    
+    // セレクトボックスの切り替えで入力エリアを出し分け
+    $('#timer_mode').on('change', function() {
+      if ($(this).val() == "0") {
+        $('#pomodoro_settings').show();
+        $('#working_settings').hide();
+      } else {
+        $('#pomodoro_settings').hide();
+        $('#working_settings').show();
+      }
+    });
+
+    // 保存ボタンの処理
+    $('#save_button').on('click', function() {
+      var mode = parseInt($('#timer_mode').val(), 10);
+      var config = { "timer_mode": mode };
+
+      if (mode === 0) {
+        // ポモドーロモードの場合：分を秒に変換して送信
+        config.work_sec = (parseInt($('#work_min').val(), 10) || 25) * 60;
+        config.rest_sec = (parseInt($('#rest_min').val(), 10) || 5) * 60;
+      } else {
+        // ワーキングモードの場合：HH:MMを「分」に変換して送信
+        config.time_start = timeToMinutes($('#time_start').val());
+        config.time_lunch_start = timeToMinutes($('#time_lunch_start').val());
+        config.time_lunch_end = timeToMinutes($('#time_lunch_end').val());
+        config.time_end = timeToMinutes($('#time_end').val());
+      }
+
+      // Pebbleにデータを送って閉じる
+      var return_url = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(config));
+      window.location.href = return_url;
+    });
+
+  });
+</script>
   </div>
-
-  <button class="save-btn" id="save_button">設定を保存</button>
-
-  <script>
-    const modeSelect = document.getElementById('timer_mode');
-    const countdownSettings = document.getElementById('countdown_settings');
-
-    modeSelect.onchange = function() {
-      countdownSettings.style.display = (this.value == "1") ? "block" : "none";
-    };
-
-    document.getElementById('save_button').onclick = function() {
-      const h = parseInt(document.getElementById('h').value) || 0;
-      const m = parseInt(document.getElementById('m').value) || 0;
-      const s = parseInt(document.getElementById('s').value) || 0;
-      
-      const config = {
-        timer_mode: parseInt(modeSelect.value),
-        total_seconds: (h * 3600) + (m * 60) + s
-      };
-
-      // Pebbleアプリにデータを返す
-      const return_to = "pebblejs://close#";
-      document.location = return_to + encodeURIComponent(JSON.stringify(config));
-    };
-  </script>
 </body>
 </html>
