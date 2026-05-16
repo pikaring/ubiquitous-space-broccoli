@@ -33,6 +33,13 @@
       </div>
       <button id="save_button" data-theme="b">Save and Apply</button>
     </div>
+    <label for="speed">AIの操作スピード:</label>
+<select id="speed">
+  <option value="100">爆速 (100ms)</option>
+  <option value="200">快速 (200ms)</option>
+  <option value="300">普通 (300ms)</option>
+  <option value="500">ゆっくり (500ms)</option>
+</select>
 <script>
   $('#save_button').on('click', function() {
     var config = {
