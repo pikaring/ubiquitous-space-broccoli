@@ -24,7 +24,20 @@
       "ICON"
     ],
     "resources": {
-      "media": []
+      "media": [
+        {
+          "type": "font",
+          "name": "FONT_DSEG7_36",
+          "file": "fonts/DSEG7Classic-Bold.ttf",
+          "characterRegex": "[0-9\\-:]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_DSEG7_28",
+          "file": "fonts/DSEG7Classic-Bold.ttf",
+          "characterRegex": "[0-9\\-:]"
+        }
+      ]
     }
   }
 }

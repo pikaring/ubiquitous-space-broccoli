@@ -70,6 +70,10 @@ static int s_weather_icon = ICON_SUN;
 static bool s_weather_valid = false;
 static int s_current_hr = 0;
 
+static GFont s_font_dseg7_36;
+static GFont s_font_dseg7_28;
+static bool s_blink = false;
+
 // Circular buffer of 1-minute HR samples; s_head is the next write slot,
 // so oldest sample is s_history[s_head] and newest is s_history[s_head-1].
 static uint8_t s_history[HISTORY_LEN];
@@ -250,28 +254,46 @@ static void prv_heart_update_proc(Layer *layer, GContext *ctx) {
   GPoint c = GPoint(b.size.w / 2, b.size.h / 2 - 1);
   GColor red = PBL_IF_COLOR_ELSE(GColorRed, GColorWhite);
 
-  // heart = two circles + triangle
+  // Heart: two circles + filled triangle
   graphics_context_set_fill_color(ctx, red);
   graphics_fill_circle(ctx, GPoint(c.x - 4, c.y - 3), 4);
   graphics_fill_circle(ctx, GPoint(c.x + 4, c.y - 3), 4);
   GPoint tri[3] = {
     {(int16_t)(c.x - 8), (int16_t)(c.y - 1)},
     {(int16_t)(c.x + 8), (int16_t)(c.y - 1)},
-    {(int16_t)c.x, (int16_t)(c.y + 8)},
+    {(int16_t)c.x,       (int16_t)(c.y + 8)},
   };
   GPathInfo info = {.num_points = 3, .points = tri};
   GPath *path = gpath_create(&info);
   gpath_draw_filled(ctx, path);
   gpath_destroy(path);
 
-  // pulse arcs "(( ))"
+  // Double pulse arcs: (( heart ))
+  // Outer arcs — always visible (thick)
+  // Inner arcs — blink on/off every second (thin)
+  const int r_outer = b.size.h / 2;
+  const int r_inner = r_outer * 3 / 4;
+  GRect outer_rect = GRect(c.x - r_outer, c.y - r_outer, r_outer * 2, r_outer * 2);
+  GRect inner_rect = GRect(c.x - r_inner, c.y - r_inner, r_inner * 2, r_inner * 2);
+
   graphics_context_set_stroke_color(ctx, red);
   graphics_context_set_stroke_width(ctx, 2);
-  GRect arc = GRect(c.x - 13, c.y - 12, 26, 26);
-  graphics_draw_arc(ctx, arc, GOvalScaleModeFitCircle,
-                    DEG_TO_TRIGANGLE(60), DEG_TO_TRIGANGLE(120));
-  graphics_draw_arc(ctx, arc, GOvalScaleModeFitCircle,
-                    DEG_TO_TRIGANGLE(240), DEG_TO_TRIGANGLE(300));
+  // Outer )  arc (right side)
+  graphics_draw_arc(ctx, outer_rect, GOvalScaleModeFitCircle,
+                    DEG_TO_TRIGANGLE(45), DEG_TO_TRIGANGLE(135));
+  // Outer (  arc (left side)
+  graphics_draw_arc(ctx, outer_rect, GOvalScaleModeFitCircle,
+                    DEG_TO_TRIGANGLE(225), DEG_TO_TRIGANGLE(315));
+
+  if (s_blink) {
+    graphics_context_set_stroke_width(ctx, 1);
+    // Inner ) arc (right, blinks)
+    graphics_draw_arc(ctx, inner_rect, GOvalScaleModeFitCircle,
+                      DEG_TO_TRIGANGLE(45), DEG_TO_TRIGANGLE(135));
+    // Inner ( arc (left, blinks)
+    graphics_draw_arc(ctx, inner_rect, GOvalScaleModeFitCircle,
+                      DEG_TO_TRIGANGLE(225), DEG_TO_TRIGANGLE(315));
+  }
 }
 
 static void prv_chart_update_proc(Layer *layer, GContext *ctx) {
@@ -330,10 +352,16 @@ static void prv_legend_update_proc(Layer *layer, GContext *ctx) {
 // --- events -------------------------------------------------------------------
 
 static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
-  prv_update_time();
-  s_current_hr = prv_read_current_hr();
-  prv_update_hr_text();
-  prv_record_sample();
+  if (units_changed & SECOND_UNIT) {
+    s_blink = !s_blink;
+    if (s_heart_layer) layer_mark_dirty(s_heart_layer);
+  }
+  if (units_changed & MINUTE_UNIT) {
+    prv_update_time();
+    s_current_hr = prv_read_current_hr();
+    prv_update_hr_text();
+    prv_record_sample();
+  }
 }
 
 #if defined(PBL_HEALTH)
@@ -369,12 +397,12 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
 
 // --- window -------------------------------------------------------------------
 
-static TextLayer *prv_make_text(Layer *parent, GRect frame, const char *font_key,
+static TextLayer *prv_make_text(Layer *parent, GRect frame, GFont font,
                                 GTextAlignment align, const char *text) {
   TextLayer *tl = text_layer_create(frame);
   text_layer_set_background_color(tl, GColorClear);
   text_layer_set_text_color(tl, GColorWhite);
-  text_layer_set_font(tl, fonts_get_system_font(font_key));
+  text_layer_set_font(tl, font);
   text_layer_set_text_alignment(tl, align);
   if (text) text_layer_set_text(tl, text);
   layer_add_child(parent, text_layer_get_layer(tl));
@@ -400,6 +428,12 @@ static void prv_window_load(Window *window) {
 
   const int right_w   = w * 30 / 100;   // column for AM/PM + date
 
+  // Load DSEG7 custom fonts
+  s_font_dseg7_36 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DSEG7_36));
+  s_font_dseg7_28 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DSEG7_28));
+  GFont sys14b = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+  GFont sys18b = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+
   int y = 0;
   s_bg_layer = layer_create(bounds);
   layer_set_update_proc(s_bg_layer, prv_bg_update_proc);
@@ -412,48 +446,45 @@ static void prv_window_load(Window *window) {
   layer_add_child(root, s_weather_icon_layer);
   const int wty = y + (weather_h - 20) / 2;
   s_temp_layer = prv_make_text(root, GRect(icon_sz + 4, wty, w * 37 / 100, 22),
-                               FONT_KEY_GOTHIC_18_BOLD, GTextAlignmentLeft, "--°C");
+                               sys18b, GTextAlignmentLeft, "--°C");
   s_cond_layer = prv_make_text(root, GRect(w / 2, wty, w / 2 - 2, 22),
-                               FONT_KEY_GOTHIC_18_BOLD, GTextAlignmentRight, "");
+                               sys18b, GTextAlignmentRight, "");
   y += weather_h;
   s_sep_y[0] = y;
 
-  // ── time row ─────────────────────────────────────────────────────────────
-  // Large time left; AM/PM top-right; date below AM/PM
-  const char *time_font = big ? FONT_KEY_LECO_42_NUMBERS : FONT_KEY_LECO_36_BOLD_NUMBERS;
+  // ── time row — DSEG7 digits ───────────────────────────────────────────────
+  GFont time_font = big ? s_font_dseg7_36 : s_font_dseg7_28;
   s_time_layer = prv_make_text(root, GRect(2, y + 4, w - right_w, time_h),
                                time_font, GTextAlignmentLeft, "--:--");
   s_ampm_layer = prv_make_text(root, GRect(w - right_w + 2, y + 4, right_w - 4, 16),
-                               FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentRight, "");
+                               sys14b, GTextAlignmentRight, "");
   s_date_layer = prv_make_text(root, GRect(w - right_w + 2, y + 23, right_w - 4, 16),
-                               FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentRight, "");
+                               sys14b, GTextAlignmentRight, "");
   y += time_h;
   s_sep_y[1] = y;
 
   // ── heart rate row ────────────────────────────────────────────────────────
-  // "HEART RATE" label top-left; heart icon left; large HR number right; "bpm" bottom-right
   s_hr_label_layer = prv_make_text(root, GRect(4, y + 2, w / 2, 14),
-                                   FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentLeft, "HEART RATE");
-  const int heart_h = hr_h - 16;   // icon fills remaining height under label
-  const int heart_w = heart_h + 8; // slightly wider to fit pulse arcs
+                                   sys14b, GTextAlignmentLeft, "HEART RATE");
+  const int heart_h = hr_h - 16;
+  const int heart_w = heart_h + 8;
   s_heart_layer = layer_create(GRect(4, y + 16, heart_w, heart_h));
   layer_set_update_proc(s_heart_layer, prv_heart_update_proc);
   layer_add_child(root, s_heart_layer);
 
-  // emery: LECO_36 (one size up from original LECO_32) for a more prominent number
-  const char *hr_font = big ? FONT_KEY_LECO_36_BOLD_NUMBERS : FONT_KEY_LECO_32_BOLD_NUMBERS;
+  // HR value in DSEG7_28 on all platforms
   const int hr_num_x = heart_w + 10;
   s_hr_value_layer = prv_make_text(root,
     GRect(hr_num_x, y + 8, w - hr_num_x - 2, hr_h - 8),
-    hr_font, GTextAlignmentRight, "--");
+    s_font_dseg7_28, GTextAlignmentRight, "--");
   s_hr_unit_layer = prv_make_text(root, GRect(w - 34, y + hr_h - 16, 34, 14),
-                                  FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentLeft, "bpm");
+                                  sys14b, GTextAlignmentLeft, "bpm");
   y += hr_h;
   s_sep_y[2] = y;
 
   // ── 1-MIN HR ZONES label ─────────────────────────────────────────────────
   s_zones_label_layer = prv_make_text(root, GRect(0, y + 1, w, label_h),
-                                      FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentCenter, "1-MIN HR ZONES");
+                                      sys14b, GTextAlignmentCenter, "1-MIN HR ZONES");
   y += label_h;
 
   // ── chart + legend ────────────────────────────────────────────────────────
@@ -472,6 +503,8 @@ static void prv_window_load(Window *window) {
 }
 
 static void prv_window_unload(Window *window) {
+  fonts_unload_custom_font(s_font_dseg7_36);
+  fonts_unload_custom_font(s_font_dseg7_28);
   layer_destroy(s_bg_layer);
   layer_destroy(s_weather_icon_layer);
   text_layer_destroy(s_temp_layer);
@@ -493,7 +526,7 @@ static void prv_init(void) {
 
   // Register health and tick services BEFORE pushing the window so that
   // the initial HR read in window_load already has a sensor request in flight.
-  tick_timer_service_subscribe(MINUTE_UNIT, prv_tick_handler);
+  tick_timer_service_subscribe(MINUTE_UNIT | SECOND_UNIT, prv_tick_handler);
 
 #if defined(PBL_HEALTH)
   health_service_events_subscribe(prv_health_handler, NULL);
