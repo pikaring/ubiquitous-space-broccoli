@@ -1,6 +1,12 @@
-// sys/types.h must come first: it provides time_t, which pebble.h needs but
-// cannot get from <time.h> because the SDK builds with -D_TIME_H_
+// The SDK builds with -D_TIME_H_, which suppresses <time.h>. Some toolchains
+// (e.g. our local one) then leave time_t undefined, so we pull it in from
+// <sys/types.h>. Other build environments (e.g. CloudPebble) instead pass
+// -Dtime_t=long, making time_t a predefined macro — including <sys/types.h>
+// there would redeclare it and fail with "two or more data types in
+// declaration specifiers". Only include it when time_t is not already defined.
+#ifndef time_t
 #include <sys/types.h>
+#endif
 #include <pebble.h>
 
 // ---------------------------------------------------------------------------
