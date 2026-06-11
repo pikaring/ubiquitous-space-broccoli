@@ -29,13 +29,25 @@
       "media": [
         {
           "type": "font",
-          "name": "FONT_ORBITRON_44",
+          "name": "FONT_ORBITRON_40",
           "file": "fonts/OrbitronBold.ttf",
           "characterRegex": "[0-9\\-:]"
         },
         {
           "type": "font",
           "name": "FONT_ORBITRON_36",
+          "file": "fonts/OrbitronBold.ttf",
+          "characterRegex": "[0-9\\-:]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_ORBITRON_28",
+          "file": "fonts/OrbitronBold.ttf",
+          "characterRegex": "[0-9\\-:]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_ORBITRON_24",
           "file": "fonts/OrbitronBold.ttf",
           "characterRegex": "[0-9\\-:]"
         }

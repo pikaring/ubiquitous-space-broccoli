@@ -62,7 +62,7 @@ function fetchWeather() {
 
 // --- settings (config screen hosted on GitHub Pages) -----------------------
 
-var CONFIG_URL = 'https://pikaring.github.io/ubiquitous-space-broccoli/';
+var CONFIG_URL = 'https://pikaring.github.io/ubiquitous-space-broccoli/cyclehr.html';
 
 function getConfig() {
   var raw = localStorage.getItem('config');
