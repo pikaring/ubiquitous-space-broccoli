@@ -12,7 +12,6 @@
     "enableMultiJS": true,
     "capabilities": ["location", "health"],
     "targetPlatforms": [
-      "basalt",
       "diorite",
       "emery"
     ],

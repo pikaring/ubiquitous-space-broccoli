@@ -93,20 +93,30 @@ static GColor prv_zone_color(int hr) {
 #endif
 }
 
+static bool prv_hr_accessible(void) {
+#if defined(PBL_HEALTH)
+  time_t now = time(NULL);
+  return health_service_metric_accessible(HealthMetricHeartRateBPM, now - 60, now)
+         & HealthServiceAccessibilityMaskAvailable;
+#else
+  return false;
+#endif
+}
+
 static int prv_read_current_hr(void) {
 #if defined(PBL_HEALTH)
-  HealthServiceAccessibilityMask mask =
-      health_service_metric_accessible(HealthMetricHeartRateBPM, time(NULL), time(NULL));
-  if (mask & HealthServiceAccessibilityMaskAvailable) {
-    return (int)health_service_peek_current_value(HealthMetricHeartRateBPM);
-  }
-#endif
+  HealthValue hr = health_service_peek_current_value(HealthMetricHeartRateBPM);
+  return (hr > 0) ? (int)hr : 0;
+#else
   return 0;
+#endif
 }
 
 static void prv_update_hr_text(void) {
   if (s_current_hr > 0) {
     snprintf(s_hr_buf, sizeof(s_hr_buf), "%d", s_current_hr);
+  } else if (!prv_hr_accessible()) {
+    snprintf(s_hr_buf, sizeof(s_hr_buf), "N/A");
   } else {
     snprintf(s_hr_buf, sizeof(s_hr_buf), "--");
   }
@@ -328,10 +338,12 @@ static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 
 #if defined(PBL_HEALTH)
 static void prv_health_handler(HealthEventType event, void *context) {
-  if (event == HealthEventHeartRateUpdate || event == HealthEventSignificantUpdate) {
-    s_current_hr = prv_read_current_hr();
-    prv_update_hr_text();
-  }
+  // React to every health event: HealthEventHeartRateUpdate is only
+  // delivered on newer firmware; movement/significant events also carry
+  // updated HR data, so we always re-read to be safe.
+  (void)event;
+  s_current_hr = prv_read_current_hr();
+  prv_update_hr_text();
 }
 #endif
 
@@ -467,6 +479,15 @@ static void prv_window_unload(Window *window) {
 static void prv_init(void) {
   prv_load_history();
 
+  // Register health and tick services BEFORE pushing the window so that
+  // the initial HR read in window_load already has a sensor request in flight.
+  tick_timer_service_subscribe(MINUTE_UNIT, prv_tick_handler);
+
+#if defined(PBL_HEALTH)
+  health_service_events_subscribe(prv_health_handler, NULL);
+  health_service_set_heart_rate_sample_period(HR_SAMPLE_PERIOD_SEC);
+#endif
+
   s_window = window_create();
   window_set_background_color(s_window, GColorBlack);
   window_set_window_handlers(s_window, (WindowHandlers) {
@@ -474,13 +495,6 @@ static void prv_init(void) {
     .unload = prv_window_unload,
   });
   window_stack_push(s_window, true);
-
-  tick_timer_service_subscribe(MINUTE_UNIT, prv_tick_handler);
-
-#if defined(PBL_HEALTH)
-  health_service_events_subscribe(prv_health_handler, NULL);
-  health_service_set_heart_rate_sample_period(HR_SAMPLE_PERIOD_SEC);
-#endif
 
   app_message_register_inbox_received(prv_inbox_received);
   app_message_open(128, 32);
