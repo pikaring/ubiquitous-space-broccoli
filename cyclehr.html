@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>CycleHR 設定</title>
+  <style>
+    :root {
+      --bg: #1c1c1e;
+      --card: #2c2c2e;
+      --fg: #ffffff;
+      --muted: #9a9a9e;
+      --accent: #ff3b30;
+      --line: #3a3a3c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      -webkit-text-size-adjust: 100%;
+    }
+    header {
+      text-align: center;
+      padding: 28px 16px 8px;
+    }
+    header h1 { margin: 0; font-size: 22px; letter-spacing: 1px; }
+    header p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+    .wrap { max-width: 480px; margin: 0 auto; padding: 16px; }
+    .card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 4px 16px;
+      margin-bottom: 22px;
+    }
+    .section-title {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 22px 4px 8px;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .row:last-child { border-bottom: none; }
+    .row label { font-size: 16px; }
+    select, input[type="number"] {
+      background: #3a3a3c;
+      color: var(--fg);
+      border: none;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 16px;
+      width: 130px;
+      text-align: right;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    select { text-align-last: right; }
+    .hint { color: var(--muted); font-size: 12px; margin: 8px 4px 0; }
+    .zonebox {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      padding-bottom: 8px;
+    }
+    .zone {
+      flex: 1;
+      text-align: center;
+      border-radius: 6px;
+      padding: 8px 0;
+      font-size: 12px;
+      font-weight: 600;
+      color: #000;
+    }
+    .z1 { background: #c7c7cc; }
+    .z2 { background: #0a84ff; color: #fff; }
+    .z3 { background: #30d158; }
+    .z4 { background: #ffd60a; }
+    .z5 { background: #ff453a; color: #fff; }
+    .zone small { display: block; font-weight: 400; font-size: 10px; opacity: .85; }
+    button {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 17px;
+      font-weight: 600;
+      margin: 8px 0 40px;
+    }
+    button:active { opacity: .8; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>CycleHR</h1>
+    <p>サイクリング用ウォッチフェイス設定</p>
+  </header>
+
+  <div class="wrap">
+    <div class="section-title">時刻表示</div>
+    <div class="card">
+      <div class="row">
+        <label for="time_format">フォーマット</label>
+        <select id="time_format">
+          <option value="0">本体設定に従う</option>
+          <option value="1">12時間 (AM/PM)</option>
+          <option value="2">24時間</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section-title">心拍ゾーン</div>
+    <div class="card">
+      <div class="row">
+        <label for="age">年齢</label>
+        <input type="number" id="age" min="5" max="120" inputmode="numeric">
+      </div>
+      <div class="row" style="display:block;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <label>最大心拍数</label>
+          <span id="maxhr" style="font-size:16px;color:var(--muted);">—</span>
+        </div>
+        <div class="zonebox">
+          <div class="zone z1">Z1<small id="z1">—</small></div>
+          <div class="zone z2">Z2<small id="z2">—</small></div>
+          <div class="zone z3">Z3<small id="z3">—</small></div>
+          <div class="zone z4">Z4<small id="z4">—</small></div>
+          <div class="zone z5">Z5<small id="z5">—</small></div>
+        </div>
+      </div>
+    </div>
+    <p class="hint">最大心拍数 = 220 − 年齢。ゾーン境界は最大心拍数の 60 / 70 / 80 / 90%。</p>
+
+    <button id="save">保存</button>
+  </div>
+
+  <script>
+    function qp(name, def) {
+      var m = new RegExp('[?&]' + name + '=([^&]*)').exec(location.search);
+      return m ? decodeURIComponent(m[1]) : def;
+    }
+
+    var timeFormatEl = document.getElementById('time_format');
+    var ageEl = document.getElementById('age');
+
+    timeFormatEl.value = qp('time_format', '0');
+    ageEl.value = qp('age', '35');
+
+    function updateZones() {
+      var age = parseInt(ageEl.value, 10);
+      if (isNaN(age) || age < 5 || age > 120) {
+        document.getElementById('maxhr').textContent = '—';
+        return;
+      }
+      var max = 220 - age;
+      document.getElementById('maxhr').textContent = max + ' bpm';
+      var pct = [0.50, 0.60, 0.70, 0.80, 0.90, 1.0];
+      for (var i = 1; i <= 5; i++) {
+        var lo = Math.round(max * pct[i - 1]);
+        var hi = Math.round(max * pct[i]);
+        document.getElementById('z' + i).textContent =
+          (i === 5) ? (lo + '+') : (lo + '–' + hi);
+      }
+    }
+    ageEl.addEventListener('input', updateZones);
+    updateZones();
+
+    document.getElementById('save').addEventListener('click', function() {
+      var cfg = {
+        time_format: parseInt(timeFormatEl.value, 10),
+        age: parseInt(ageEl.value, 10) || 35
+      };
+      var ret = qp('return_to', 'pebblejs://close#');
+      location.href = ret + encodeURIComponent(JSON.stringify(cfg));
+    });
+  </script>
+</body>
+</html>
