@@ -497,12 +497,14 @@ static void prv_window_load(Window *window) {
     s_font_time = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_28));
     s_font_hr   = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_24));
   }
-  // Saira SemiCondensed for all labels
+  // Saira SemiCondensed for all labels.
+  // On diorite (144px wide) use 14pt for mid-size labels so text doesn't clip.
   s_font_label_14 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_14));
   s_font_label_18 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_18));
   s_font_label_24 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_24));
-  GFont sys14b = s_font_label_14;
-  GFont sys18b = s_font_label_18;
+  GFont label_sm  = s_font_label_14;
+  GFont label_mid = big ? s_font_label_18 : s_font_label_14;  // 18 emery / 14 diorite
+  const int label_mid_h = big ? 20 : 16;
   GFont bpm_font = big ? s_font_label_24 : s_font_label_18;
   const int bpm_w = big ? 46 : 36;
 
@@ -516,11 +518,11 @@ static void prv_window_load(Window *window) {
   s_weather_icon_layer = layer_create(GRect(2, y + 1, icon_sz, icon_sz));
   layer_set_update_proc(s_weather_icon_layer, prv_weather_icon_update_proc);
   layer_add_child(root, s_weather_icon_layer);
-  const int wty = y + (weather_h - 20) / 2;
-  s_temp_layer = prv_make_text(root, GRect(icon_sz + 4, wty, w * 37 / 100, 22),
-                               sys18b, GTextAlignmentLeft, "--°C");
-  s_cond_layer = prv_make_text(root, GRect(w / 2, wty, w / 2 - 2, 22),
-                               sys18b, GTextAlignmentRight, "");
+  const int wty = y + (weather_h - label_mid_h) / 2;
+  s_temp_layer = prv_make_text(root, GRect(icon_sz + 4, wty, w * 37 / 100, label_mid_h + 2),
+                               label_mid, GTextAlignmentLeft, "--°C");
+  s_cond_layer = prv_make_text(root, GRect(w / 2, wty, w / 2 - 2, label_mid_h + 2),
+                               label_mid, GTextAlignmentRight, "");
   y += weather_h;
   s_sep_y[0] = y;
 
@@ -529,16 +531,16 @@ static void prv_window_load(Window *window) {
   // digits have enough room; the date is right-aligned and short.
   s_time_layer = prv_make_text(root, GRect(2, y + 4, w - right_w + 8, time_h),
                                s_font_time, GTextAlignmentLeft, "--:--");
-  s_ampm_layer = prv_make_text(root, GRect(w - right_w + 2, y + 4, right_w - 4, 20),
-                               sys18b, GTextAlignmentRight, "");
-  s_date_layer = prv_make_text(root, GRect(w - right_w + 2, y + 26, right_w - 4, 20),
-                               sys18b, GTextAlignmentRight, "");
+  s_ampm_layer = prv_make_text(root, GRect(w - right_w + 2, y + 4, right_w - 4, label_mid_h),
+                               label_mid, GTextAlignmentRight, "");
+  s_date_layer = prv_make_text(root, GRect(w - right_w + 2, y + 4 + label_mid_h + 2,
+                               right_w - 4, label_mid_h), label_mid, GTextAlignmentRight, "");
   y += time_h;
   s_sep_y[1] = y;
 
   // ── heart rate row ────────────────────────────────────────────────────────
   s_hr_label_layer = prv_make_text(root, GRect(4, y + 2, w / 2, 14),
-                                   sys14b, GTextAlignmentLeft, "HEART RATE");
+                                   label_sm, GTextAlignmentLeft, "HEART RATE");
   const int heart_h = hr_h - 16;
   const int heart_w = heart_h + 8;
   const int heart_x = 6;  // aligned under the "HEART RATE" label
@@ -560,7 +562,7 @@ static void prv_window_load(Window *window) {
 
   // ── 1-MIN HR ZONES label ─────────────────────────────────────────────────
   s_zones_label_layer = prv_make_text(root, GRect(0, y + 1, w, label_h),
-                                      sys14b, GTextAlignmentCenter, "1-MIN HR ZONES");
+                                      label_sm, GTextAlignmentCenter, "1-MIN HR ZONES");
   y += label_h;
 
   // ── chart + legend ────────────────────────────────────────────────────────
