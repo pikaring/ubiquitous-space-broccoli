@@ -92,9 +92,11 @@ static int s_time_format = TIME_FORMAT_SYSTEM;
 
 static GFont s_font_time;   // large Orbitron for the clock
 static GFont s_font_hr;     // medium Orbitron for the HR number
-static GFont s_font_label_14;  // Saira SemiCondensed labels
+static GFont s_font_label_12;  // Saira SemiCondensed labels
+static GFont s_font_label_14;
 static GFont s_font_label_18;
 static GFont s_font_label_24;
+static GFont s_font_label_sm; // small-label font in use (14 emery / 12 diorite)
 static bool s_blink = false;
 
 // Circular buffer of 1-minute HR samples; s_head is the next write slot,
@@ -339,7 +341,7 @@ static void prv_heart_update_proc(Layer *layer, GContext *ctx) {
 
 static void prv_chart_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
-  GFont small = s_font_label_14;
+  GFont small = s_font_label_sm;
   const int axis_h = 16;
   int chart_h = b.size.h - axis_h;
 
@@ -375,7 +377,7 @@ static void prv_legend_update_proc(Layer *layer, GContext *ctx) {
   static const char *names[5] = {"Z1", "Z2", "Z3", "Z4", "Z5"};
   // representative HR for each zone picks the matching color
   const int rep_hr[5] = {0, ZONE2_MIN, ZONE3_MIN, ZONE4_MIN, ZONE5_MIN};
-  GFont small = s_font_label_14;
+  GFont small = s_font_label_sm;
 
   for (int i = 0; i < 5; i++) {
     int x = i * b.size.w / 5;
@@ -497,16 +499,18 @@ static void prv_window_load(Window *window) {
     s_font_time = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_28));
     s_font_hr   = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_24));
   }
-  // Saira SemiCondensed for all labels.
-  // On diorite (144px wide) use 14pt for mid-size labels so text doesn't clip.
+  // Saira SemiCondensed for all labels. The narrow diorite (144px) uses a
+  // smaller size across the board so nothing clips; emery (200px) is larger.
+  s_font_label_12 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_12));
   s_font_label_14 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_14));
   s_font_label_18 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_18));
   s_font_label_24 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_24));
-  GFont label_sm  = s_font_label_14;
-  GFont label_mid = big ? s_font_label_18 : s_font_label_14;  // 18 emery / 14 diorite
-  const int label_mid_h = big ? 20 : 16;
-  GFont bpm_font = big ? s_font_label_24 : s_font_label_18;
-  const int bpm_w = big ? 46 : 36;
+  s_font_label_sm = big ? s_font_label_14 : s_font_label_12;  // 14 emery / 12 diorite
+  GFont label_sm  = s_font_label_sm;
+  GFont label_mid = big ? s_font_label_18 : s_font_label_12;  // 18 emery / 12 diorite
+  const int label_mid_h = big ? 20 : 14;
+  GFont bpm_font = big ? s_font_label_24 : s_font_label_12;
+  const int bpm_w = big ? 46 : 24;
 
   int y = 0;
   s_bg_layer = layer_create(bounds);
@@ -557,7 +561,7 @@ static void prv_window_load(Window *window) {
   // Align bpm bottom with HR number text bottom.
   // HR text bottom ≈ (y+8) + font_size (36 emery / 24 diorite).
   // bpm top = HR text bottom - bpm font_size (24 emery / 18 diorite).
-  const int bpm_top = y + 8 + (big ? (36 - 24) : (24 - 18));
+  const int bpm_top = y + 8 + (big ? (36 - 24) : (24 - 12));
   s_hr_unit_layer = prv_make_text(root, GRect(w - bpm_w - 2, bpm_top, bpm_w, big ? 26 : 22),
                                   bpm_font, GTextAlignmentRight, "bpm");
   y += hr_h;
@@ -586,6 +590,7 @@ static void prv_window_load(Window *window) {
 static void prv_window_unload(Window *window) {
   fonts_unload_custom_font(s_font_time);
   fonts_unload_custom_font(s_font_hr);
+  fonts_unload_custom_font(s_font_label_12);
   fonts_unload_custom_font(s_font_label_14);
   fonts_unload_custom_font(s_font_label_18);
   fonts_unload_custom_font(s_font_label_24);

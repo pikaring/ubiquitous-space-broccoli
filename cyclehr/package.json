@@ -53,6 +53,12 @@
         },
         {
           "type": "font",
+          "name": "FONT_SAIRA_12",
+          "file": "fonts/SairaSemiCondensed-Medium.ttf",
+          "characterRegex": "[ -~°]"
+        },
+        {
+          "type": "font",
           "name": "FONT_SAIRA_14",
           "file": "fonts/SairaSemiCondensed-Medium.ttf",
           "characterRegex": "[ -~°]"
