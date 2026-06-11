@@ -1,3 +1,6 @@
+// sys/types.h must come first: it provides time_t, which pebble.h needs but
+// cannot get from <time.h> because the SDK builds with -D_TIME_H_
+#include <sys/types.h>
 #include <pebble.h>
 
 // ---------------------------------------------------------------------------
@@ -59,7 +62,7 @@ static Layer *s_legend_layer;
 static char s_time_buf[8];
 static char s_ampm_buf[4];
 static char s_date_buf[12];
-static char s_hr_buf[8];
+static char s_hr_buf[12];
 static char s_temp_buf[8];
 static char s_cond_buf[16];
 
@@ -205,7 +208,8 @@ static void prv_weather_icon_update_proc(Layer *layer, GContext *ctx) {
     case ICON_PART_CLOUD:
       graphics_context_set_fill_color(ctx, sun);
       graphics_fill_circle(ctx, GPoint(c.x - 3, c.y - 3), r - 4);
-      // fall through to draw the cloud over the sun
+      // then draw the cloud over the sun
+      __attribute__((fallthrough));
     case ICON_CLOUD:
     case ICON_RAIN:
     case ICON_SNOW:

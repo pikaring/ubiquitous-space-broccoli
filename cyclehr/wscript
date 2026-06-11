@@ -32,6 +32,10 @@ def build(ctx):
     cached_env = ctx.env
     for platform in ctx.env.TARGET_PLATFORMS:
         ctx.env = ctx.all_envs[platform]
+        # SDK 4.4 was written for GCC 4.x; silence warnings that newer GCC
+        # (9+) raises against the SDK's own flags and headers
+        ctx.env.append_value('CFLAGS', ['-Wno-builtin-macro-redefined',
+                                        '-Wno-builtin-declaration-mismatch'])
         ctx.set_group(ctx.env.PLATFORM_NAME)
         app_elf = '{}/pebble-app.elf'.format(ctx.env.BUILD_DIR)
         ctx.pbl_build(source=ctx.path.ant_glob('src/c/**/*.c'), target=app_elf, bin_type='app')
