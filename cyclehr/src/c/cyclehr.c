@@ -116,7 +116,7 @@ static void prv_update_hr_text(void) {
   if (s_current_hr > 0) {
     snprintf(s_hr_buf, sizeof(s_hr_buf), "%d", s_current_hr);
   } else if (!prv_hr_accessible()) {
-    snprintf(s_hr_buf, sizeof(s_hr_buf), "N/A");
+    snprintf(s_hr_buf, sizeof(s_hr_buf), "---");
   } else {
     snprintf(s_hr_buf, sizeof(s_hr_buf), "--");
   }
@@ -386,71 +386,83 @@ static void prv_window_load(Window *window) {
   GRect bounds = layer_get_bounds(root);
   const int w = bounds.size.w;
   const int h = bounds.size.h;
-  const bool big = h >= 200;  // emery
+  const bool big = h >= 200;  // emery (200x228) vs diorite (144x168)
 
-  const int weather_h = h * 15 / 100;
-  const int time_h = h * 26 / 100;
-  const int hr_h = h * 21 / 100;
-  const int label_h = 16;
-  const int legend_h = 15;
+  // Section heights — give the HR row more room so the number can be larger
+  // emery: weather=29 time=61 hr=57 label=14 chart=53 legend=14  total=228
+  // diorite: weather=21 time=45 hr=42 label=14 chart=32 legend=14  total=168
+  const int weather_h = h * 13 / 100;
+  const int time_h    = h * 27 / 100;
+  const int hr_h      = h * 25 / 100;
+  const int label_h   = 14;
+  const int legend_h  = 14;
+  const int chart_h   = h - weather_h - time_h - hr_h - label_h - legend_h;
+
+  const int right_w   = w * 30 / 100;   // column for AM/PM + date
 
   int y = 0;
   s_bg_layer = layer_create(bounds);
   layer_set_update_proc(s_bg_layer, prv_bg_update_proc);
   layer_add_child(root, s_bg_layer);
 
-  // -- weather row
-  s_weather_icon_layer = layer_create(GRect(2, y + 1, weather_h, weather_h - 2));
+  // ── weather row ───────────────────────────────────────────────────────────
+  const int icon_sz = weather_h - 2;
+  s_weather_icon_layer = layer_create(GRect(2, y + 1, icon_sz, icon_sz));
   layer_set_update_proc(s_weather_icon_layer, prv_weather_icon_update_proc);
   layer_add_child(root, s_weather_icon_layer);
-  int text_y = y + (weather_h - 22) / 2 - 2;
-  s_temp_layer = prv_make_text(root, GRect(weather_h + 4, text_y, w * 35 / 100, 22),
+  const int wty = y + (weather_h - 20) / 2;
+  s_temp_layer = prv_make_text(root, GRect(icon_sz + 4, wty, w * 37 / 100, 22),
                                FONT_KEY_GOTHIC_18_BOLD, GTextAlignmentLeft, "--°C");
-  s_cond_layer = prv_make_text(root, GRect(w / 2 - 4, text_y, w / 2, 22),
+  s_cond_layer = prv_make_text(root, GRect(w / 2, wty, w / 2 - 2, 22),
                                FONT_KEY_GOTHIC_18_BOLD, GTextAlignmentRight, "");
   y += weather_h;
   s_sep_y[0] = y;
 
-  // -- time row
+  // ── time row ─────────────────────────────────────────────────────────────
+  // Large time left; AM/PM top-right; date below AM/PM
   const char *time_font = big ? FONT_KEY_LECO_42_NUMBERS : FONT_KEY_LECO_36_BOLD_NUMBERS;
-  int time_font_h = big ? 42 : 36;
-  int right_w = w * 30 / 100;
-  s_time_layer = prv_make_text(root, GRect(2, y + (time_h - time_font_h) / 2 - 6, w - right_w, time_h),
+  s_time_layer = prv_make_text(root, GRect(2, y + 4, w - right_w, time_h),
                                time_font, GTextAlignmentLeft, "--:--");
-  s_ampm_layer = prv_make_text(root, GRect(w - right_w, y + time_h / 2 - 18, right_w - 2, 18),
+  s_ampm_layer = prv_make_text(root, GRect(w - right_w + 2, y + 4, right_w - 4, 16),
                                FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentRight, "");
-  s_date_layer = prv_make_text(root, GRect(w - right_w, y + time_h / 2 - 2, right_w - 2, 18),
+  s_date_layer = prv_make_text(root, GRect(w - right_w + 2, y + 23, right_w - 4, 16),
                                FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentRight, "");
   y += time_h;
   s_sep_y[1] = y;
 
-  // -- heart rate row
-  s_hr_label_layer = prv_make_text(root, GRect(4, y - 2, w / 2, 16),
+  // ── heart rate row ────────────────────────────────────────────────────────
+  // "HEART RATE" label top-left; heart icon left; large HR number right; "bpm" bottom-right
+  s_hr_label_layer = prv_make_text(root, GRect(4, y + 2, w / 2, 14),
                                    FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentLeft, "HEART RATE");
-  s_heart_layer = layer_create(GRect(8, y + 14, 34, hr_h - 16));
+  const int heart_h = hr_h - 16;   // icon fills remaining height under label
+  const int heart_w = heart_h + 8; // slightly wider to fit pulse arcs
+  s_heart_layer = layer_create(GRect(4, y + 16, heart_w, heart_h));
   layer_set_update_proc(s_heart_layer, prv_heart_update_proc);
   layer_add_child(root, s_heart_layer);
-  int hr_font_h = 32;
-  s_hr_value_layer = prv_make_text(root, GRect(w / 2 - 14, y + (hr_h - hr_font_h) / 2 - 6, w / 2 - 18, hr_h),
-                                   FONT_KEY_LECO_32_BOLD_NUMBERS, GTextAlignmentRight, "--");
-  s_hr_unit_layer = prv_make_text(root, GRect(w - 30, y + hr_h - 20, 30, 16),
+
+  // emery: LECO_36 (one size up from original LECO_32) for a more prominent number
+  const char *hr_font = big ? FONT_KEY_LECO_36_BOLD_NUMBERS : FONT_KEY_LECO_32_BOLD_NUMBERS;
+  const int hr_num_x = heart_w + 10;
+  s_hr_value_layer = prv_make_text(root,
+    GRect(hr_num_x, y + 8, w - hr_num_x - 2, hr_h - 8),
+    hr_font, GTextAlignmentRight, "--");
+  s_hr_unit_layer = prv_make_text(root, GRect(w - 34, y + hr_h - 16, 34, 14),
                                   FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentLeft, "bpm");
   y += hr_h;
   s_sep_y[2] = y;
 
-  // -- zones label
-  s_zones_label_layer = prv_make_text(root, GRect(0, y - 2, w, label_h),
+  // ── 1-MIN HR ZONES label ─────────────────────────────────────────────────
+  s_zones_label_layer = prv_make_text(root, GRect(0, y + 1, w, label_h),
                                       FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentCenter, "1-MIN HR ZONES");
   y += label_h;
 
-  // -- chart (bars + time axis) and legend
-  int chart_h = h - y - legend_h - 2;
+  // ── chart + legend ────────────────────────────────────────────────────────
   s_chart_layer = layer_create(GRect(2, y, w - 4, chart_h));
   layer_set_update_proc(s_chart_layer, prv_chart_update_proc);
   layer_add_child(root, s_chart_layer);
   y += chart_h;
 
-  s_legend_layer = layer_create(GRect(2, y + 1, w - 2, legend_h));
+  s_legend_layer = layer_create(GRect(2, y, w - 4, legend_h));
   layer_set_update_proc(s_legend_layer, prv_legend_update_proc);
   layer_add_child(root, s_legend_layer);
 
