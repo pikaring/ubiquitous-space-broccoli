@@ -215,9 +215,6 @@ static void prv_update_time(void) {
     s_ampm_buf[0] = '\0';
   } else {
     strftime(s_time_buf, sizeof(s_time_buf), "%I:%M", t);
-    if (s_time_buf[0] == '0') {
-      memmove(s_time_buf, s_time_buf + 1, strlen(s_time_buf));
-    }
     strftime(s_ampm_buf, sizeof(s_ampm_buf), "%p", t);
   }
   text_layer_set_text(s_time_layer, s_time_buf);
