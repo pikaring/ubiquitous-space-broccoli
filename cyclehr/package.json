@@ -50,6 +50,24 @@
           "name": "FONT_ORBITRON_24",
           "file": "fonts/OrbitronBold.ttf",
           "characterRegex": "[0-9\\-:]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_SAIRA_14",
+          "file": "fonts/SairaSemiCondensed-Medium.ttf",
+          "characterRegex": "[ -~°]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_SAIRA_18",
+          "file": "fonts/SairaSemiCondensed-Medium.ttf",
+          "characterRegex": "[ -~°]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_SAIRA_24",
+          "file": "fonts/SairaSemiCondensed-Medium.ttf",
+          "characterRegex": "[ -~°]"
         }
       ]
     }

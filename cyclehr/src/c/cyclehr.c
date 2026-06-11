@@ -86,6 +86,9 @@ static int s_time_format = TIME_FORMAT_SYSTEM;
 
 static GFont s_font_time;   // large Orbitron for the clock
 static GFont s_font_hr;     // medium Orbitron for the HR number
+static GFont s_font_label_14;  // Saira SemiCondensed labels
+static GFont s_font_label_18;
+static GFont s_font_label_24;
 static bool s_blink = false;
 
 // Circular buffer of 1-minute HR samples; s_head is the next write slot,
@@ -333,7 +336,7 @@ static void prv_heart_update_proc(Layer *layer, GContext *ctx) {
 
 static void prv_chart_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
-  GFont small = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  GFont small = s_font_label_14;
   const int axis_h = 16;
   int chart_h = b.size.h - axis_h;
 
@@ -369,7 +372,7 @@ static void prv_legend_update_proc(Layer *layer, GContext *ctx) {
   static const char *names[5] = {"Z1", "Z2", "Z3", "Z4", "Z5"};
   // representative HR for each zone picks the matching color
   const int rep_hr[5] = {0, ZONE2_MIN, ZONE3_MIN, ZONE4_MIN, ZONE5_MIN};
-  GFont small = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  GFont small = s_font_label_14;
 
   for (int i = 0; i < 5; i++) {
     int x = i * b.size.w / 5;
@@ -491,10 +494,13 @@ static void prv_window_load(Window *window) {
     s_font_time = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_28));
     s_font_hr   = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_24));
   }
-  GFont sys14b = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
-  GFont sys18b = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
-  GFont sys24b = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
-  GFont bpm_font = big ? sys24b : sys18b;
+  // Saira SemiCondensed for all labels
+  s_font_label_14 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_14));
+  s_font_label_18 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_18));
+  s_font_label_24 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_24));
+  GFont sys14b = s_font_label_14;
+  GFont sys18b = s_font_label_18;
+  GFont bpm_font = big ? s_font_label_24 : s_font_label_18;
   const int bpm_w = big ? 46 : 36;
 
   int y = 0;
@@ -571,6 +577,9 @@ static void prv_window_load(Window *window) {
 static void prv_window_unload(Window *window) {
   fonts_unload_custom_font(s_font_time);
   fonts_unload_custom_font(s_font_hr);
+  fonts_unload_custom_font(s_font_label_14);
+  fonts_unload_custom_font(s_font_label_18);
+  fonts_unload_custom_font(s_font_label_24);
   layer_destroy(s_bg_layer);
   layer_destroy(s_weather_icon_layer);
   text_layer_destroy(s_temp_layer);
