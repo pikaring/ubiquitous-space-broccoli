@@ -13,25 +13,35 @@
 
 #define HISTORY_LEN 60
 
-// HR zones derived from max HR (Karvonen-less simple %max model).
-// Adjust MAX_HR to your own maximum heart rate.
-#define MAX_HR 190
-#define ZONE2_MIN (MAX_HR * 60 / 100)  // 114
-#define ZONE3_MIN (MAX_HR * 70 / 100)  // 133
-#define ZONE4_MIN (MAX_HR * 80 / 100)  // 152
-#define ZONE5_MIN (MAX_HR * 90 / 100)  // 171
+// HR zones derived from max HR (simple %max model). The max HR defaults to
+// 190 but is overridden from the config screen (220 - age). Zone thresholds
+// are computed at runtime from s_max_hr.
+#define DEFAULT_MAX_HR 190
+#define ZONE2_MIN (s_max_hr * 60 / 100)
+#define ZONE3_MIN (s_max_hr * 70 / 100)
+#define ZONE4_MIN (s_max_hr * 80 / 100)
+#define ZONE5_MIN (s_max_hr * 90 / 100)
 
 // Chart vertical scale
 #define CHART_HR_MIN 50
-#define CHART_HR_MAX MAX_HR
+#define CHART_HR_MAX (s_max_hr)
+
+// Time format (from config): 0=follow watch, 1=12h (AM/PM), 2=24h
+enum {
+  TIME_FORMAT_SYSTEM = 0,
+  TIME_FORMAT_12H,
+  TIME_FORMAT_24H,
+};
 
 // How often the HR sensor should sample while this face is open (seconds)
 #define HR_SAMPLE_PERIOD_SEC 15
 
 // Persistence keys
-#define PERSIST_KEY_HISTORY   1
-#define PERSIST_KEY_HEAD      2
-#define PERSIST_KEY_SAVED_AT  3
+#define PERSIST_KEY_HISTORY     1
+#define PERSIST_KEY_HEAD        2
+#define PERSIST_KEY_SAVED_AT    3
+#define PERSIST_KEY_MAX_HR      4
+#define PERSIST_KEY_TIME_FORMAT 5
 
 // Weather icon ids (must match src/pkjs/index.js)
 enum {
@@ -70,7 +80,11 @@ static int s_weather_icon = ICON_SUN;
 static bool s_weather_valid = false;
 static int s_current_hr = 0;
 
-static GFont s_font_orbitron_52;
+// User settings (config screen)
+static int s_max_hr = DEFAULT_MAX_HR;
+static int s_time_format = TIME_FORMAT_SYSTEM;
+
+static GFont s_font_orbitron_44;
 static GFont s_font_orbitron_36;
 static bool s_blink = false;
 
@@ -160,13 +174,34 @@ static void prv_load_history(void) {
   }
 }
 
+static void prv_load_settings(void) {
+  if (persist_exists(PERSIST_KEY_MAX_HR)) {
+    s_max_hr = persist_read_int(PERSIST_KEY_MAX_HR);
+  }
+  if (s_max_hr < 100 || s_max_hr > 230) s_max_hr = DEFAULT_MAX_HR;
+  if (persist_exists(PERSIST_KEY_TIME_FORMAT)) {
+    s_time_format = persist_read_int(PERSIST_KEY_TIME_FORMAT);
+  }
+  if (s_time_format < 0 || s_time_format > TIME_FORMAT_24H) {
+    s_time_format = TIME_FORMAT_SYSTEM;
+  }
+}
+
+static void prv_save_settings(void) {
+  persist_write_int(PERSIST_KEY_MAX_HR, s_max_hr);
+  persist_write_int(PERSIST_KEY_TIME_FORMAT, s_time_format);
+}
+
 // --- time / date -------------------------------------------------------------
 
 static void prv_update_time(void) {
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
 
-  if (clock_is_24h_style()) {
+  bool h24 = (s_time_format == TIME_FORMAT_24H) ||
+             (s_time_format == TIME_FORMAT_SYSTEM && clock_is_24h_style());
+
+  if (h24) {
     strftime(s_time_buf, sizeof(s_time_buf), "%H:%M", t);
     s_ampm_buf[0] = '\0';
   } else {
@@ -379,6 +414,25 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *temp = dict_find(iter, MESSAGE_KEY_TEMPERATURE);
   Tuple *cond = dict_find(iter, MESSAGE_KEY_CONDITIONS);
   Tuple *icon = dict_find(iter, MESSAGE_KEY_ICON);
+  Tuple *max_hr = dict_find(iter, MESSAGE_KEY_MAX_HR);
+  Tuple *tfmt = dict_find(iter, MESSAGE_KEY_TIME_FORMAT);
+
+  // Settings from the config screen
+  if (max_hr || tfmt) {
+    if (max_hr) {
+      int v = (int)max_hr->value->int32;
+      if (v >= 100 && v <= 230) s_max_hr = v;
+    }
+    if (tfmt) {
+      int v = (int)tfmt->value->int32;
+      if (v >= 0 && v <= TIME_FORMAT_24H) s_time_format = v;
+    }
+    prv_save_settings();
+    prv_update_time();
+    prv_update_hr_text();
+    layer_mark_dirty(s_chart_layer);
+    layer_mark_dirty(s_legend_layer);
+  }
 
   if (temp) {
     snprintf(s_temp_buf, sizeof(s_temp_buf), "%d°C", (int)temp->value->int32);
@@ -429,10 +483,11 @@ static void prv_window_load(Window *window) {
   const int right_w   = w * 30 / 100;   // column for AM/PM + date
 
   // Load Orbitron custom fonts
-  s_font_orbitron_52 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_52));
+  s_font_orbitron_44 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_44));
   s_font_orbitron_36 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_36));
   GFont sys14b = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
   GFont sys18b = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  GFont sys24b = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
 
   int y = 0;
   s_bg_layer = layer_create(bounds);
@@ -453,7 +508,7 @@ static void prv_window_load(Window *window) {
   s_sep_y[0] = y;
 
   // ── time row — Orbitron digits ────────────────────────────────────────────
-  GFont time_font = big ? s_font_orbitron_52 : s_font_orbitron_36;
+  GFont time_font = big ? s_font_orbitron_44 : s_font_orbitron_36;
   s_time_layer = prv_make_text(root, GRect(2, y + 4, w - right_w, time_h),
                                time_font, GTextAlignmentLeft, "--:--");
   s_ampm_layer = prv_make_text(root, GRect(w - right_w + 2, y + 4, right_w - 4, 20),
@@ -473,13 +528,15 @@ static void prv_window_load(Window *window) {
   layer_set_update_proc(s_heart_layer, prv_heart_update_proc);
   layer_add_child(root, s_heart_layer);
 
-  // HR value in Orbitron_36 on all platforms
-  const int hr_num_x = w / 2 + 4;
+  // HR value (Orbitron_36) sits just left of the "bpm" label, so the number
+  // lands around the screen centre. "bpm" is a larger label, bottom-aligned.
+  const int bpm_w = big ? 52 : 46;
+  const int hr_val_left = heart_x + heart_w;
   s_hr_value_layer = prv_make_text(root,
-    GRect(hr_num_x, y + 8, w - hr_num_x - 2, hr_h - 8),
+    GRect(hr_val_left, y + 8, w - bpm_w - hr_val_left, hr_h - 8),
     s_font_orbitron_36, GTextAlignmentRight, "--");
-  s_hr_unit_layer = prv_make_text(root, GRect(w - 44, y + hr_h - 20, 44, 20),
-                                  sys18b, GTextAlignmentLeft, "bpm");
+  s_hr_unit_layer = prv_make_text(root, GRect(w - bpm_w, y + hr_h - 28, bpm_w, 26),
+                                  sys24b, GTextAlignmentLeft, "bpm");
   y += hr_h;
   s_sep_y[2] = y;
 
@@ -504,7 +561,7 @@ static void prv_window_load(Window *window) {
 }
 
 static void prv_window_unload(Window *window) {
-  fonts_unload_custom_font(s_font_orbitron_52);
+  fonts_unload_custom_font(s_font_orbitron_44);
   fonts_unload_custom_font(s_font_orbitron_36);
   layer_destroy(s_bg_layer);
   layer_destroy(s_weather_icon_layer);
@@ -523,6 +580,7 @@ static void prv_window_unload(Window *window) {
 }
 
 static void prv_init(void) {
+  prv_load_settings();
   prv_load_history();
 
   // Register health and tick services BEFORE pushing the window so that

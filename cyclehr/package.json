@@ -21,13 +21,15 @@
     "messageKeys": [
       "TEMPERATURE",
       "CONDITIONS",
-      "ICON"
+      "ICON",
+      "TIME_FORMAT",
+      "MAX_HR"
     ],
     "resources": {
       "media": [
         {
           "type": "font",
-          "name": "FONT_ORBITRON_52",
+          "name": "FONT_ORBITRON_44",
           "file": "fonts/OrbitronBold.ttf",
           "characterRegex": "[0-9\\-:]"
         },
