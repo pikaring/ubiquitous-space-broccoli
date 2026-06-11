@@ -27,14 +27,14 @@
       "media": [
         {
           "type": "font",
-          "name": "FONT_DSEG7_36",
-          "file": "fonts/DSEG7Classic-Bold.ttf",
+          "name": "FONT_ORBITRON_52",
+          "file": "fonts/OrbitronBold.ttf",
           "characterRegex": "[0-9\\-:]"
         },
         {
           "type": "font",
-          "name": "FONT_DSEG7_28",
-          "file": "fonts/DSEG7Classic-Bold.ttf",
+          "name": "FONT_ORBITRON_36",
+          "file": "fonts/OrbitronBold.ttf",
           "characterRegex": "[0-9\\-:]"
         }
       ]

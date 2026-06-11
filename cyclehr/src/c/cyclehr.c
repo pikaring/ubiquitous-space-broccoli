@@ -70,8 +70,8 @@ static int s_weather_icon = ICON_SUN;
 static bool s_weather_valid = false;
 static int s_current_hr = 0;
 
-static GFont s_font_dseg7_36;
-static GFont s_font_dseg7_28;
+static GFont s_font_orbitron_52;
+static GFont s_font_orbitron_36;
 static bool s_blink = false;
 
 // Circular buffer of 1-minute HR samples; s_head is the next write slot,
@@ -428,9 +428,9 @@ static void prv_window_load(Window *window) {
 
   const int right_w   = w * 30 / 100;   // column for AM/PM + date
 
-  // Load DSEG7 custom fonts
-  s_font_dseg7_36 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DSEG7_36));
-  s_font_dseg7_28 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DSEG7_28));
+  // Load Orbitron custom fonts
+  s_font_orbitron_52 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_52));
+  s_font_orbitron_36 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_36));
   GFont sys14b = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
   GFont sys18b = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
 
@@ -452,14 +452,14 @@ static void prv_window_load(Window *window) {
   y += weather_h;
   s_sep_y[0] = y;
 
-  // ── time row — DSEG7 digits ───────────────────────────────────────────────
-  GFont time_font = big ? s_font_dseg7_36 : s_font_dseg7_28;
+  // ── time row — Orbitron digits ────────────────────────────────────────────
+  GFont time_font = big ? s_font_orbitron_52 : s_font_orbitron_36;
   s_time_layer = prv_make_text(root, GRect(2, y + 4, w - right_w, time_h),
                                time_font, GTextAlignmentLeft, "--:--");
-  s_ampm_layer = prv_make_text(root, GRect(w - right_w + 2, y + 4, right_w - 4, 16),
-                               sys14b, GTextAlignmentRight, "");
-  s_date_layer = prv_make_text(root, GRect(w - right_w + 2, y + 23, right_w - 4, 16),
-                               sys14b, GTextAlignmentRight, "");
+  s_ampm_layer = prv_make_text(root, GRect(w - right_w + 2, y + 4, right_w - 4, 20),
+                               sys18b, GTextAlignmentRight, "");
+  s_date_layer = prv_make_text(root, GRect(w - right_w + 2, y + 26, right_w - 4, 20),
+                               sys18b, GTextAlignmentRight, "");
   y += time_h;
   s_sep_y[1] = y;
 
@@ -468,17 +468,18 @@ static void prv_window_load(Window *window) {
                                    sys14b, GTextAlignmentLeft, "HEART RATE");
   const int heart_h = hr_h - 16;
   const int heart_w = heart_h + 8;
-  s_heart_layer = layer_create(GRect(4, y + 16, heart_w, heart_h));
+  const int heart_x = (w / 2 - heart_w) / 2;
+  s_heart_layer = layer_create(GRect(heart_x, y + 16, heart_w, heart_h));
   layer_set_update_proc(s_heart_layer, prv_heart_update_proc);
   layer_add_child(root, s_heart_layer);
 
-  // HR value in DSEG7_28 on all platforms
-  const int hr_num_x = heart_w + 10;
+  // HR value in Orbitron_36 on all platforms
+  const int hr_num_x = w / 2 + 4;
   s_hr_value_layer = prv_make_text(root,
     GRect(hr_num_x, y + 8, w - hr_num_x - 2, hr_h - 8),
-    s_font_dseg7_28, GTextAlignmentRight, "--");
-  s_hr_unit_layer = prv_make_text(root, GRect(w - 34, y + hr_h - 16, 34, 14),
-                                  sys14b, GTextAlignmentLeft, "bpm");
+    s_font_orbitron_36, GTextAlignmentRight, "--");
+  s_hr_unit_layer = prv_make_text(root, GRect(w - 44, y + hr_h - 20, 44, 20),
+                                  sys18b, GTextAlignmentLeft, "bpm");
   y += hr_h;
   s_sep_y[2] = y;
 
@@ -503,8 +504,8 @@ static void prv_window_load(Window *window) {
 }
 
 static void prv_window_unload(Window *window) {
-  fonts_unload_custom_font(s_font_dseg7_36);
-  fonts_unload_custom_font(s_font_dseg7_28);
+  fonts_unload_custom_font(s_font_orbitron_52);
+  fonts_unload_custom_font(s_font_orbitron_36);
   layer_destroy(s_bg_layer);
   layer_destroy(s_weather_icon_layer);
   text_layer_destroy(s_temp_layer);
