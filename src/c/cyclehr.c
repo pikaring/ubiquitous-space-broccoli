@@ -552,7 +552,8 @@ static void prv_window_load(Window *window) {
   s_hr_value_layer = prv_make_text(root,
     GRect(hr_val_left, y + 8, (w - bpm_w - 6) - hr_val_left, hr_h - 8),
     s_font_hr, GTextAlignmentRight, "--");
-  s_hr_unit_layer = prv_make_text(root, GRect(w - bpm_w - 2, y + hr_h - 28, bpm_w, 26),
+  const int bpm_top = y + 8 + (big ? (36 - 24) : (24 - 18));
+  s_hr_unit_layer = prv_make_text(root, GRect(w - bpm_w - 2, bpm_top, bpm_w, big ? 26 : 22),
                                   bpm_font, GTextAlignmentRight, "bpm");
   y += hr_h;
   s_sep_y[2] = y;
