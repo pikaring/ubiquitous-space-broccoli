@@ -535,10 +535,15 @@ static void prv_window_load(Window *window) {
   // digits have enough room; the date is right-aligned and short.
   s_time_layer = prv_make_text(root, GRect(2, y + 4, w - right_w + 8, time_h),
                                s_font_time, GTextAlignmentLeft, "--:--");
-  s_ampm_layer = prv_make_text(root, GRect(w - right_w + 2, y + 4, right_w - 4, label_mid_h),
+  // Widen the info column on emery so long day names like "WED 12" don't clip.
+  // Start from 55% of screen width (110px on emery) instead of 70% (142px).
+  // The Orbitron time digits are left-aligned and never visually reach x=110.
+  const int info_x = big ? (w * 55 / 100) : (w - right_w + 2);
+  const int info_w = big ? (w - info_x - 2) : (right_w - 4);
+  s_ampm_layer = prv_make_text(root, GRect(info_x, y + 4, info_w, label_mid_h),
                                label_mid, GTextAlignmentRight, "");
-  s_date_layer = prv_make_text(root, GRect(w - right_w + 2, y + 4 + label_mid_h + 2,
-                               right_w - 4, label_mid_h), label_mid, GTextAlignmentRight, "");
+  s_date_layer = prv_make_text(root, GRect(info_x, y + 4 + label_mid_h + 2,
+                               info_w, label_mid_h), label_mid, GTextAlignmentRight, "");
   y += time_h;
   s_sep_y[1] = y;
 
