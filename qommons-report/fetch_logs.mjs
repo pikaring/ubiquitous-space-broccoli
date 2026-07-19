@@ -19,8 +19,9 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 
-const BASE_URL = process.env.QOMMONS_URL || 'https://qommons.ai/';
+const BASE_URL = process.env.QOMMONS_URL || 'https://qommons.ai/login';
 const EMAIL = process.env.QOMMONS_EMAIL;
 const PASSWORD = process.env.QOMMONS_PASSWORD;
 
@@ -40,6 +41,20 @@ const executablePath = process.env.QOMMONS_CHROMIUM_PATH
   || (fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined);
 // この環境の外向き HTTPS はプロキシ経由。Chromium は HTTPS_PROXY を読まないので明示指定する
 const proxy = process.env.HTTPS_PROXY ? { server: process.env.HTTPS_PROXY } : undefined;
+
+// プロキシが TLS を再終端するため、Chromium にその CA を信頼させる必要がある
+// (NSS ストアはコンテナ起動ごとに空になるので毎回確認する)。
+// また上流プロキシは Chromium の TLS1.3 ClientHello を処理できず接続リセットに
+// なるため、TLS1.2 を上限にする(証明書検証は有効なまま)。
+const launchArgs = ['--ssl-version-max=tls1.2'];
+if (proxy && fs.existsSync('/root/.ccr/agent-proxy-ca.crt')) {
+  try {
+    execSync('which certutil || { apt-get update -qq && apt-get install -y -qq libnss3-tools; }', { stdio: 'pipe', timeout: 180000 });
+    execSync('mkdir -p $HOME/.pki/nssdb && (certutil -d sql:$HOME/.pki/nssdb -L -n ccr-agent-proxy 2>/dev/null || certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n ccr-agent-proxy -i /root/.ccr/agent-proxy-ca.crt)', { stdio: 'pipe', timeout: 30000 });
+  } catch (e) {
+    console.error(`WARN: CA 証明書の NSS 登録に失敗: ${e.message}`);
+  }
+}
 
 async function dumpDebug(page, tag) {
   try {
@@ -66,30 +81,24 @@ async function clickFirst(page, locators, desc) {
   return false;
 }
 
-const browser = await chromium.launch({ executablePath, proxy });
+const browser = await chromium.launch({ executablePath, proxy, args: launchArgs });
 const context = await browser.newContext({ acceptDownloads: true, locale: 'ja-JP' });
 const page = await context.newPage();
 
 try {
-  // 1. ログインページへ
+  // 1. ログインページへ(https://qommons.ai/ は /login にリダイレクトされる)
+  // 実測済みのフォーム構成 (2026-07-19):
+  //   input[name="username"] placeholder="メールアドレス" / input[name="password"] / button「ログイン」
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(2000);
 
-  // すでにログインフォームでなければ「ログイン」リンクを探す
   const emailInput = page.locator(
-    'input[type="email"], input[name*="mail" i], input[placeholder*="メール"], input[autocomplete="username"]'
+    'input[name="username"], input[type="email"], input[placeholder*="メール"], input[autocomplete="username"]'
   );
-  if (!(await emailInput.first().isVisible({ timeout: 3000 }).catch(() => false))) {
-    await clickFirst(page, [
-      page.getByRole('link', { name: /ログイン|log ?in|sign ?in/i }),
-      page.getByRole('button', { name: /ログイン|log ?in|sign ?in/i }),
-    ], 'ログインリンク');
-    await page.waitForTimeout(2000);
-  }
 
   // 2. ログイン
   await emailInput.first().fill(EMAIL, { timeout: 15000 });
-  await page.locator('input[type="password"]').first().fill(PASSWORD);
+  await page.locator('input[name="password"], input[type="password"]').first().fill(PASSWORD);
   await clickFirst(page, [
     page.getByRole('button', { name: /ログイン|log ?in|sign ?in|送信/i }),
     page.locator('button[type="submit"], input[type="submit"]'),
@@ -97,9 +106,9 @@ try {
   await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
   await page.waitForTimeout(3000);
 
-  if (await page.locator('input[type="password"]').first().isVisible().catch(() => false)) {
+  if (page.url().includes('/login') || await page.locator('input[type="password"]').first().isVisible().catch(() => false)) {
     await dumpDebug(page, 'login-failed');
-    throw new Error('ログインに失敗した可能性があります(パスワード欄が残っています)');
+    throw new Error(`ログインに失敗した可能性があります(現在URL: ${page.url()})`);
   }
   await dumpDebug(page, 'after-login');
 
