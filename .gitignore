@@ -1,5 +1,6 @@
 build/
-.lock-waf_linux_buildqommons-report/downloads/
+.lock-waf_linux_build
+qommons-report/downloads/
 qommons-report/debug/
 qommons-report/node_modules/
 qommons-report/package*.json
