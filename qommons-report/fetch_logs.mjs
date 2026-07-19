@@ -35,7 +35,11 @@ if (!EMAIL || !PASSWORD) {
   process.exit(2);
 }
 
-const executablePath = process.env.QOMMONS_CHROMIUM_PATH || undefined;
+// プリインストール版 Chromium を使う(npm の playwright とバージョンが違っても動くように)
+const executablePath = process.env.QOMMONS_CHROMIUM_PATH
+  || (fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined);
+// この環境の外向き HTTPS はプロキシ経由。Chromium は HTTPS_PROXY を読まないので明示指定する
+const proxy = process.env.HTTPS_PROXY ? { server: process.env.HTTPS_PROXY } : undefined;
 
 async function dumpDebug(page, tag) {
   try {
@@ -62,7 +66,7 @@ async function clickFirst(page, locators, desc) {
   return false;
 }
 
-const browser = await chromium.launch({ executablePath });
+const browser = await chromium.launch({ executablePath, proxy });
 const context = await browser.newContext({ acceptDownloads: true, locale: 'ja-JP' });
 const page = await context.newPage();
 
