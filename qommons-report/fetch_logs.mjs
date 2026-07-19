@@ -6,22 +6,32 @@
 // 必要な環境変数:
 //   QOMMONS_EMAIL    ログイン用メールアドレス
 //   QOMMONS_PASSWORD ログイン用パスワード
-//   QOMMONS_URL      (任意) ログインページ URL。既定: https://qommons.ai/
+//   QOMMONS_URL      (任意) ログインページ URL。既定: https://qommons.ai/login
 //
 // 出力:
-//   qommons-report/downloads/ に CSV を保存し、パスを標準出力に出す。
+//   qommons-report/downloads/qommons-log-YYYY-MM-DD.csv(当月1日〜当日 JST)
 //   失敗時は qommons-report/debug/ にスクリーンショットと HTML を保存して exit 1。
 //
-// 注意: Qommons AI の画面構成は初回実行時に確定していないため、セレクタは
-// テキストベースのヒューリスティックで探す。UI が想定と違って失敗した場合は
-// debug/ の内容を見てこのスクリプトを修正すること。
+// 実機で確認済みのフロー (2026-07-20):
+//   1. /login で input[name=username] / input[name=password] → 「ログイン」ボタン
+//   2. /log-dashboard(利用者ログ)は Amazon QuickSight ダッシュボードの iframe 埋め込み。
+//      iframe 内からのダウンロードはヘッドレスで拾えないため、iframe の埋め込み URL を
+//      リクエスト横取りで取得し(URL は使い捨てなので iframe 側は abort)、トップレベルで開く。
+//   3. Controls を展開 → input[aria-label="Enter a date"] ×2 に開始日・終了日を入力
+//   4. 「利用ログ」テーブルにホバー → [aria-label="Menu options, 利用ログ, Table"]
+//      → menuitem「Export to CSV」でダウンロード
+//
+// 環境まわり(リモート実行環境向け):
+//   - 外向き HTTPS はプロキシ経由(HTTPS_PROXY)。Chromium には明示指定が必要
+//   - プロキシが TLS を再終端するため CA を NSS ストアに登録(毎コンテナで必要)
+//   - プロキシは Chromium の TLS1.3 ClientHello を処理できないため TLS1.2 上限を指定
 
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 
-const BASE_URL = process.env.QOMMONS_URL || 'https://qommons.ai/login';
+const LOGIN_URL = process.env.QOMMONS_URL || 'https://qommons.ai/login';
 const EMAIL = process.env.QOMMONS_EMAIL;
 const PASSWORD = process.env.QOMMONS_PASSWORD;
 
@@ -36,16 +46,10 @@ if (!EMAIL || !PASSWORD) {
   process.exit(2);
 }
 
-// プリインストール版 Chromium を使う(npm の playwright とバージョンが違っても動くように)
 const executablePath = process.env.QOMMONS_CHROMIUM_PATH
   || (fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined);
-// この環境の外向き HTTPS はプロキシ経由。Chromium は HTTPS_PROXY を読まないので明示指定する
 const proxy = process.env.HTTPS_PROXY ? { server: process.env.HTTPS_PROXY } : undefined;
 
-// プロキシが TLS を再終端するため、Chromium にその CA を信頼させる必要がある
-// (NSS ストアはコンテナ起動ごとに空になるので毎回確認する)。
-// また上流プロキシは Chromium の TLS1.3 ClientHello を処理できず接続リセットに
-// なるため、TLS1.2 を上限にする(証明書検証は有効なまま)。
 const launchArgs = ['--ssl-version-max=tls1.2'];
 if (proxy && fs.existsSync('/root/.ccr/agent-proxy-ca.crt')) {
   try {
@@ -66,95 +70,70 @@ async function dumpDebug(page, tag) {
   }
 }
 
-// テキストで要素を探すヘルパー。複数候補を順に試す。
-async function clickFirst(page, locators, desc) {
-  for (const loc of locators) {
-    const el = loc.first();
-    try {
-      if (await el.isVisible({ timeout: 2000 })) {
-        await el.click();
-        return true;
-      }
-    } catch { /* try next */ }
-  }
-  console.error(`WARN: ${desc} が見つかりませんでした`);
-  return false;
-}
-
 const browser = await chromium.launch({ executablePath, proxy, args: launchArgs });
 const context = await browser.newContext({ acceptDownloads: true, locale: 'ja-JP' });
 const page = await context.newPage();
 
 try {
-  // 1. ログインページへ(https://qommons.ai/ は /login にリダイレクトされる)
-  // 実測済みのフォーム構成 (2026-07-19):
-  //   input[name="username"] placeholder="メールアドレス" / input[name="password"] / button「ログイン」
-  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  // 1. ログイン
+  await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(2000);
-
-  const emailInput = page.locator(
-    'input[name="username"], input[type="email"], input[placeholder*="メール"], input[autocomplete="username"]'
-  );
-
-  // 2. ログイン
-  await emailInput.first().fill(EMAIL, { timeout: 15000 });
+  await page.locator('input[name="username"], input[type="email"], input[placeholder*="メール"]').first().fill(EMAIL, { timeout: 15000 });
   await page.locator('input[name="password"], input[type="password"]').first().fill(PASSWORD);
-  await clickFirst(page, [
-    page.getByRole('button', { name: /ログイン|log ?in|sign ?in|送信/i }),
-    page.locator('button[type="submit"], input[type="submit"]'),
-  ], 'ログインボタン');
-  await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
-  await page.waitForTimeout(3000);
+  await page.getByRole('button', { name: /ログイン|log ?in/i }).first().click();
+  await page.waitForTimeout(5000);
 
-  if (page.url().includes('/login') || await page.locator('input[type="password"]').first().isVisible().catch(() => false)) {
+  if (page.url().includes('/login')) {
     await dumpDebug(page, 'login-failed');
     throw new Error(`ログインに失敗した可能性があります(現在URL: ${page.url()})`);
   }
-  await dumpDebug(page, 'after-login');
 
-  // 3. 画面左下のメニューからログを開く
-  //    (左下のユーザー/設定メニュー → 「ログ」項目 という想定)
-  await clickFirst(page, [
-    page.getByRole('button', { name: /メニュー|設定|アカウント|menu/i }),
-    page.locator('[class*="sidebar" i] button').last(),
-    page.locator('nav button').last(),
-  ], '左下メニュー');
-  await page.waitForTimeout(1500);
+  // 2. 利用者ログ(QuickSight 埋め込み)の URL を横取りし、iframe 側は中断
+  let embedUrl = null;
+  await page.route('**quicksight.aws.amazon.com/embed/**', route => {
+    if (!embedUrl) { embedUrl = route.request().url(); route.abort('aborted'); }
+    else route.continue();
+  });
+  await page.goto('https://qommons.ai/log-dashboard', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  for (let i = 0; i < 30 && !embedUrl; i++) await page.waitForTimeout(1000);
+  if (!embedUrl) {
+    await dumpDebug(page, 'no-embed-url');
+    throw new Error('QuickSight 埋め込み URL を取得できませんでした(/log-dashboard の構成が変わった可能性)');
+  }
+  await page.unroute('**quicksight.aws.amazon.com/embed/**');
 
-  await clickFirst(page, [
-    page.getByRole('menuitem', { name: /ログ/ }),
-    page.getByRole('link', { name: /ログ/ }),
-    page.getByText(/^ログ$|利用ログ|ログ管理/, { exact: false }).first(),
-  ], 'ログメニュー項目');
-  await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+  // 3. QuickSight をトップレベルで開く
+  await page.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.waitForTimeout(15000);
+
+  // 4. Controls を展開して日付を当月1日〜当日(JST)に設定
+  await page.locator('[aria-label="Controls"]').click().catch(() => {});
   await page.waitForTimeout(2000);
-  await dumpDebug(page, 'log-page');
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+  const pad = n => String(n).padStart(2, '0');
+  const start = `${now.getFullYear()}/${pad(now.getMonth() + 1)}/01 00:00:00`;
+  const end = `${now.getFullYear()}/${pad(now.getMonth() + 1)}/${pad(now.getDate())} 23:59:59`;
+  const dates = page.locator('input[aria-label="Enter a date"]');
+  await dates.nth(0).waitFor({ state: 'visible', timeout: 15000 });
+  await dates.nth(0).fill(start); await dates.nth(0).press('Enter');
+  await page.waitForTimeout(2000);
+  await dates.nth(1).fill(end); await dates.nth(1).press('Enter');
+  console.log(`期間設定: ${start} 〜 ${end}`);
+  await page.waitForTimeout(15000); // データ再読み込み待ち
 
-  // 4. 日付範囲を設定(当月1日〜今日。input[type=date] がある場合のみ)
-  const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
-  const ymd = (d) => d.toISOString().slice(0, 10);
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const dateInputs = page.locator('input[type="date"]');
-  const n = await dateInputs.count();
-  if (n >= 2) {
-    await dateInputs.nth(0).fill(ymd(monthStart));
-    await dateInputs.nth(1).fill(ymd(today));
-  } else if (n === 1) {
-    await dateInputs.nth(0).fill(ymd(today));
-  }
-
-  // 5. CSV ダウンロード
-  const downloadPromise = page.waitForEvent('download', { timeout: 60000 });
-  const clicked = await clickFirst(page, [
-    page.getByRole('button', { name: /csv|ダウンロード|エクスポート|出力/i }),
-    page.getByRole('link', { name: /csv|ダウンロード|エクスポート|出力/i }),
-  ], 'CSVダウンロードボタン');
-  if (!clicked) {
-    await dumpDebug(page, 'no-download-button');
-    throw new Error('CSVダウンロードボタンが見つかりませんでした');
-  }
-  const download = await downloadPromise;
-  const outPath = path.join(downloadsDir, `qommons-log-${ymd(today)}.csv`);
+  // 5. 「利用ログ」テーブルにホバー → メニュー → Export to CSV
+  const vis = page.locator('text=Table, 利用ログ').first();
+  const box = await vis.boundingBox().catch(() => null);
+  if (box) await page.mouse.move(box.x + box.width / 2, box.y + 40);
+  await page.waitForTimeout(2000);
+  const menuBtn = page.locator('[aria-label="Menu options, 利用ログ, Table"]');
+  await menuBtn.waitFor({ state: 'visible', timeout: 20000 });
+  await menuBtn.click();
+  await page.waitForTimeout(1500);
+  const dl = page.waitForEvent('download', { timeout: 180000 });
+  await page.locator('[role="menuitem"]:has-text("Export to CSV")').first().click();
+  const download = await dl;
+  const outPath = path.join(downloadsDir, `qommons-log-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.csv`);
   await download.saveAs(outPath);
   console.log(`DOWNLOADED: ${outPath}`);
 } catch (err) {
