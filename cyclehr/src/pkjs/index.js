@@ -60,7 +60,52 @@ function fetchWeather() {
   }, { timeout: 15000, maximumAge: 30 * 60 * 1000 });
 }
 
+// --- settings (config screen hosted on GitHub Pages) -----------------------
+
+var CONFIG_URL = 'https://pikaring.github.io/ubiquitous-space-broccoli/cyclehr.html';
+
+function getConfig() {
+  var raw = localStorage.getItem('config');
+  return raw ? JSON.parse(raw) : { time_format: 0, age: 35 };
+}
+
+function sendConfig(cfg) {
+  var age = parseInt(cfg.age, 10);
+  if (isNaN(age) || age < 5 || age > 120) age = 35;
+  Pebble.sendAppMessage({
+    TIME_FORMAT: parseInt(cfg.time_format, 10) || 0,
+    MAX_HR: 220 - age
+  }, function() {
+    console.log('Config sent: tf=' + cfg.time_format + ' age=' + age);
+  }, function() {
+    console.log('Config send failed');
+  });
+}
+
+Pebble.addEventListener('showConfiguration', function() {
+  var cfg = getConfig();
+  var url = CONFIG_URL +
+    '?time_format=' + encodeURIComponent(cfg.time_format) +
+    '&age=' + encodeURIComponent(cfg.age);
+  Pebble.openURL(url);
+});
+
+Pebble.addEventListener('webviewclosed', function(e) {
+  if (!e || !e.response) return;
+  var cfg;
+  try {
+    cfg = JSON.parse(decodeURIComponent(e.response));
+  } catch (err) {
+    console.log('Config parse error: ' + err);
+    return;
+  }
+  localStorage.setItem('config', JSON.stringify(cfg));
+  sendConfig(cfg);
+});
+
 Pebble.addEventListener('ready', function() {
+  // push stored settings to the watch on launch
+  sendConfig(getConfig());
   fetchWeather();
   // refresh every 30 minutes while the watchface is open
   setInterval(fetchWeather, 30 * 60 * 1000);

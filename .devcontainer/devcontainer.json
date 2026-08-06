@@ -26,12 +26,14 @@
     },
     "codespaces": {
       "openFiles": [
-        "src/c/myfirstproject.c"
+        "cyclehr/src/c/cyclehr.c",
+        "cyclehr/DESIGN.md"
       ]
     }
   },
 
-  "workspaceFolder": "/workspaces/codespaces-pebble/myfirstproject",
+  // No workspaceFolder override: this repo holds several Pebble projects, so we
+  // open the repo root and build from a project subdirectory (cd cyclehr && pebble build).
   "containerEnv": {
     "LOCALWORKSPACEFOLDERBASENAME": "${localWorkspaceFolderBasename}",
     "LOCALWORKSPACEFOLDER": "${localWorkspaceFolder}",
