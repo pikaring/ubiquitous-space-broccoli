@@ -418,6 +418,11 @@
     // profile toward narrower tracks/paths instead of paved local roads.
     let url = `https://brouter.de/brouter?lonlats=${lonlats}&profile=${profile}&alternativeidx=0&format=geojson`
       + `&profile:correctMisplacedViaPoints=1&profile:correctMisplacedViaPointsDistance=600`;
+    // prefer_unpaved is what keeps the router on a track between the two via
+    // points that pin it, not just what biases it towards gravel in general.
+    // Turning it off for the connectors was tried, and it let the router
+    // bypass the very forest roads that had been selected: on the Uzura 35km
+    // course the unpaved share fell from 54% to 16%.
     if (profile === 'gravel') url += '&profile:prefer_unpaved_paths=1';
     else if (!allowFerries) url += '&profile:allow_ferries=0';
     const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
@@ -657,7 +662,64 @@ out geom;`;
       est += best.addition;
       cur = best.atA ? best.s.b : best.s.a;
     }
-    return { tour, gravelKm: tour.reduce((n, t) => n + t.seg.km, 0) };
+    // Both orderings are kept as candidates rather than one replacing the
+    // other: reordering helps when the tracks are spread out (Iwamizawa 100km,
+    // repeated road 20.6% -> 13.4%) and hurts when they are not, so which one
+    // wins is decided by scoring the routes, not assumed here.
+    const greedy = orientTour(tour, start);
+    const improved = improveTourOrder(tour, start);
+    const tours = [greedy];
+    if (Math.abs(connectorLengthM(improved, start) - connectorLengthM(greedy, start)) > 1) tours.push(improved);
+    return { tours, tour: greedy, gravelKm: tour.reduce((n, t) => n + t.seg.km, 0) };
+  }
+
+  // The greedy pick above chooses which tracks to ride, but leaves them in the
+  // order it happened to find them, which zigzags when they are clustered.
+  // A 2-opt pass over the straight-line connector length fixes most of that,
+  // and costs nothing: no routing is involved. On the Iwamizawa 100km course
+  // it cut the connectors from 44.8km to 39.9km and the repeated road from
+  // 20.6% to 13.4%.
+  function orientTour(order, start) {
+    let cur = { lon: start.lng, lat: start.lat };
+    const out = [];
+    for (const t of order) {
+      const dA = haversineM([cur.lon, cur.lat], [t.seg.a.lon, t.seg.a.lat]);
+      const dB = haversineM([cur.lon, cur.lat], [t.seg.b.lon, t.seg.b.lat]);
+      const atA = dA <= dB;
+      out.push({ seg: t.seg, entry: atA ? t.seg.a : t.seg.b, exit: atA ? t.seg.b : t.seg.a });
+      cur = atA ? t.seg.b : t.seg.a;
+    }
+    return out;
+  }
+
+  function connectorLengthM(order, start) {
+    let m = 0;
+    let cur = { lon: start.lng, lat: start.lat };
+    for (const t of order) {
+      m += haversineM([cur.lon, cur.lat], [t.entry.lon, t.entry.lat]);
+      cur = t.exit;
+    }
+    return m + haversineM([cur.lon, cur.lat], [start.lng, start.lat]);
+  }
+
+  function improveTourOrder(tour, start) {
+    if (tour.length < 3) return orientTour(tour, start);
+    let best = orientTour(tour, start);
+    let bestM = connectorLengthM(best, start);
+    for (let guard = 0; guard < 50; guard++) {
+      let improved = false;
+      for (let i = 0; i < best.length - 1; i++) {
+        for (let j = i + 1; j < best.length; j++) {
+          const candidate = best.slice(0, i)
+            .concat(best.slice(i, j + 1).reverse(), best.slice(j + 1));
+          const oriented = orientTour(candidate, start);
+          const m = connectorLengthM(oriented, start);
+          if (m < bestM - 1) { best = oriented; bestM = m; improved = true; }
+        }
+      }
+      if (!improved) break;
+    }
+    return best;
   }
 
   function tourViaPoints(tour, start) {
@@ -690,14 +752,27 @@ out geom;`;
       let plan = planTour(segs, start, targetKm, v);
       if (!plan.tour.length) continue;
       for (let iter = 0; iter < 3; iter++) {
-        let geo;
         setStatus(`林道 ${plan.tour.length}本のコースを計算中…`);
-        try { geo = await brouterRouteRaw(tourViaPoints(plan.tour, start), 'gravel', false); }
-        catch (err) { break; }
-        const st = routeStats(geo);
-        const err = (st.km - targetKm) / targetKm;
-        // what matters here is repetition on the unpaved parts
-        const score = Math.abs(err) + st.repeatUnpaved * 0.5;
+        let geo = null, st = null, err = 0, chosenTour = plan.tour;
+        for (const candidateTour of (plan.tours || [plan.tour])) {
+          let g;
+          try { g = await brouterRouteRaw(tourViaPoints(candidateTour, start), 'gravel', false); }
+          catch (e) { continue; }
+          const s2 = routeStats(g);
+          const e2 = (s2.km - targetKm) / targetKm;
+          const sc = Math.abs(e2) + (s2.repeatUnpaved / Math.max(s2.km, 1)) * 5;
+          if (!geo || sc < Math.abs(err) + (st.repeatUnpaved / Math.max(st.km, 1)) * 5) {
+            geo = g; st = s2; err = e2; chosenTour = candidateTour;
+          }
+        }
+        if (!geo) break;
+        plan = { ...plan, tour: chosenTour };
+        // Repetition on the unpaved parts is the thing to avoid -- that is
+        // where you meet an oncoming rider with nowhere to go -- so it
+        // outweighs distance error rather than competing with it. Measured as
+        // a share of the route, not kilometres, which would otherwise make a
+        // long course look worse than a short one whatever it did.
+        const score = Math.abs(err) + (st.repeatUnpaved / Math.max(st.km, 1)) * 5;
         if (!best || score < best.score) best = { score, geo, st, tour: plan.tour, pts: tourViaPoints(plan.tour, start) };
         if (Math.abs(err) <= 0.06) break;
         if (err > 0 && plan.tour.length > 1) plan = { ...plan, tour: plan.tour.slice(0, -1) };
