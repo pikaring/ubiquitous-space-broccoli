@@ -830,9 +830,25 @@ out geom;`;
     const nodeUse = new Map();
     for (const w of ways) for (const n of w.nodes) nodeUse.set(n, (nodeUse.get(n) || 0) + 1);
 
+    // highway=path counts. Much of rural Japan was bulk-imported from the
+    // Yahoo/ALPS map, which sorted roads by width: 幅員1.5m未満 became path,
+    // 1.5〜3.0m became track or residential, 3.0m以上 became unclassified.
+    // Around 厚沢部 that leaves 85 path ways -- 50km of narrow farm and forest
+    // road, none of it carrying a surface tag -- against 83 tracks, and a real
+    // course through there rides the paths. Scoring already treats them as
+    // unpaved; leaving them out of the candidate list meant the tool marked
+    // them as gravel but would never propose one.
+    //
+    // Elsewhere highway=path really is a 登山道, so anything tagged as a
+    // hiking route, closed to bikes, or private is dropped, and a path that
+    // has been surfaced is sealed road however narrow it is.
     const unpaved = ways.filter(w => {
       const t = w.tags || {};
-      return t.highway === 'track' || UNPAVED_SURFACE.test('surface=' + (t.surface || ''))
+      if (t.bicycle === 'no' || t.access === 'no' || t.access === 'private') return false;
+      if (t.sac_scale || t.trail_visibility || t.informal === 'yes') return false;
+      if (PAVED_SURFACE.test('surface=' + (t.surface || ''))) return false;
+      return /^(track|path|bridleway)$/.test(t.highway || '')
+        || UNPAVED_SURFACE.test('surface=' + (t.surface || ''))
         || /^grade[2-5]$/.test(t.tracktype || '');
     });
     const byEnd = new Map();
