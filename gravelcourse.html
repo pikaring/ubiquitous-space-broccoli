@@ -158,7 +158,7 @@
   .statgrid div { flex: 1; }
   .statgrid .num { font-size: 20px; font-weight: 700; }
   .statgrid .label { font-size: 11px; color: var(--muted); margin-top: 2px; }
-  .warn { color: var(--danger); font-size: 12.5px; margin-top: 8px; }
+  .warn { color: var(--danger); font-size: 12.5px; margin-top: 8px; white-space: pre-line; }
   footer { text-align: center; color: var(--muted); font-size: 11px; padding: 0 16px 24px; }
   footer a { color: var(--muted); }
 </style>
@@ -215,6 +215,7 @@
         <label><input type="radio" name="surface" id="surfaceGravel" value="gravel" checked> グラベル</label>
         <label><input type="radio" name="surface" id="surfaceRoad" value="fastbike"> ロード</label>
       </div>
+      <div class="pointinfo">フェリーは自動で回避し、往復での同じ道の折り返しも抑制します。グラベルは舗装路より未舗装の細い道を優先します。</div>
 
       <button type="button" class="primary" id="generateBtn">コースを生成</button>
       <div id="status"></div>
@@ -390,14 +391,71 @@
   }
 
   // ---------- BRouter ----------
-  async function brouterRoute(points, profile) {
+  // Ferry ways found mid-route get fenced off with a nogo circle and the
+  // route is recomputed, so ferries only ever appear when truly unavoidable.
+  let ferryNogos = [];
+  let ferryWarning = false;
+
+  function nogosQuery() {
+    return ferryNogos.map(p => `${p.lon.toFixed(6)},${p.lat.toFixed(6)},300`).join('|');
+  }
+
+  async function brouterRouteRaw(points, profile) {
     const lonlats = points.map(p => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join('|');
-    const url = `https://brouter.de/brouter?lonlats=${lonlats}&profile=${profile}&alternativeidx=0&format=geojson`;
-    const res = await fetch(url);
+    // profile:correctMisplacedViaPoints trims out-and-back stubs created by
+    // detour via-points; profile:prefer_unpaved_paths biases the gravel
+    // profile toward narrower tracks/paths instead of paved local roads.
+    let url = `https://brouter.de/brouter?lonlats=${lonlats}&profile=${profile}&alternativeidx=0&format=geojson`
+      + `&profile:correctMisplacedViaPoints=1&profile:correctMisplacedViaPointsDistance=600`;
+    if (profile === 'gravel') url += '&profile:prefer_unpaved_paths=1';
+    const ng = nogosQuery();
+    if (ng) url += `&nogos=${encodeURIComponent(ng)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
     if (!res.ok) throw new Error(`ルート計算に失敗しました (HTTP ${res.status})`);
     const data = await res.json();
     if (!data.features || !data.features.length) throw new Error('ルートが見つかりませんでした');
     return data;
+  }
+
+  // BRouter's geojson "messages" table has one row per graph edge with a
+  // WayTags column (e.g. "route=ferry ..."); scan it for ferry crossings.
+  function findFerryPoints(geo) {
+    const props = geo.features[0].properties;
+    const messages = props.messages;
+    if (!messages || messages.length < 2) return [];
+    const header = messages[0];
+    const lonIdx = header.indexOf('Longitude');
+    const latIdx = header.indexOf('Latitude');
+    const tagsIdx = header.indexOf('WayTags');
+    const pts = [];
+    for (let i = 1; i < messages.length; i++) {
+      const tags = messages[i][tagsIdx] || '';
+      if (/\broute=ferry\b/.test(tags)) {
+        pts.push({ lon: parseInt(messages[i][lonIdx], 10) / 1e6, lat: parseInt(messages[i][latIdx], 10) / 1e6 });
+      }
+    }
+    return pts;
+  }
+
+  async function brouterRoute(points, profile) {
+    let lastGeo = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      let geo;
+      try {
+        geo = await brouterRouteRaw(points, profile);
+      } catch (err) {
+        // A nogo detour can be too expensive for the routing server to
+        // recompute; fall back to the last route we did get rather than fail.
+        if (lastGeo) { ferryWarning = true; return lastGeo; }
+        throw err;
+      }
+      lastGeo = geo;
+      const ferryPts = findFerryPoints(geo);
+      if (!ferryPts.length) return geo;
+      if (attempt === 3 || ferryNogos.length > 40) { ferryWarning = true; return geo; }
+      ferryPts.forEach(p => ferryNogos.push(p));
+    }
+    return lastGeo;
   }
 
   function trackLengthKm(geo) {
@@ -558,6 +616,8 @@ ${trkpts}
     }
     const profile = document.querySelector('input[name=surface]:checked').value;
 
+    ferryNogos = [];
+    ferryWarning = false;
     generateBtn.disabled = true;
     setStatus('ルート計算を開始します…');
     try {
@@ -577,13 +637,20 @@ ${trkpts}
       document.getElementById('statAscend').textContent = ascendM(fit.geo);
       resultEl.style.display = 'block';
 
+      const warnLines = [];
       const diffPct = Math.abs(fit.km - targetKm) / targetKm * 100;
       if (diffPct > 8) {
         if (fit.km > targetKm) {
-          warnEl.textContent = `2地点間の最短ルートがすでに ${fit.km.toFixed(1)}km あり、目標距離 ${targetKm}km より長くなっています。目標距離を増やしてください。`;
+          warnLines.push(`2地点間の最短ルートがすでに ${fit.km.toFixed(1)}km あり、目標距離 ${targetKm}km より長くなっています。目標距離を増やしてください。`);
         } else {
-          warnEl.textContent = `目標距離との誤差が大きめです（実距離 ${fit.km.toFixed(1)}km）。周辺の道路網の都合で近づけられませんでした。地点や距離を変えて再試行してください。`;
+          warnLines.push(`目標距離との誤差が大きめです（実距離 ${fit.km.toFixed(1)}km）。周辺の道路網の都合で近づけられませんでした。地点や距離を変えて再試行してください。`);
         }
+      }
+      if (ferryWarning) {
+        warnLines.push('フェリー区間を完全には回避できませんでした（陸路の迂回が非常に長くなるか、迂回路が見つかりませんでした）。');
+      }
+      if (warnLines.length) {
+        warnEl.textContent = warnLines.join('\n');
         warnEl.style.display = 'block';
       }
       setStatus(`完了: 実距離 ${fit.km.toFixed(1)}km / 目標 ${targetKm}km`);
