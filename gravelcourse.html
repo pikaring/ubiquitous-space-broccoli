@@ -215,7 +215,7 @@
         <label><input type="radio" name="surface" id="surfaceGravel" value="gravel" checked> グラベル</label>
         <label><input type="radio" name="surface" id="surfaceRoad" value="fastbike"> ロード</label>
       </div>
-      <div class="pointinfo">複数の形・方位を試し、同じ道の往復が少ないものを選びます。フェリーを含む経路は除外。グラベルは舗装路より未舗装の細い道を優先します。200km超は公開サーバーの制限で目標に届かない場合があります。</div>
+      <div class="pointinfo">グラベルの周回は、周辺の林道から出口のあるものだけを選び、舗装路でつないで距離を合わせます（未舗装路での折り返しはすれ違いが危険なため避けます）。ロードは舗装路の重複を許容して距離を優先します。フェリーを含む経路は除外。200km超は公開サーバーの制限で目標に届かない場合があります。</div>
 
       <button type="button" class="primary" id="generateBtn">コースを生成</button>
       <div id="status"></div>
@@ -228,7 +228,9 @@
         <div><div class="num" id="statDistance">-</div><div class="label">実距離 km</div></div>
         <div><div class="num" id="statTarget">-</div><div class="label">目標 km</div></div>
         <div><div class="num" id="statAscend">-</div><div class="label">獲得標高 m</div></div>
+        <div><div class="num" id="statUnpaved">-</div><div class="label">未舗装 km</div></div>
       </div>
+      <div class="pointinfo" id="statDetail"></div>
       <button type="button" class="secondary" id="downloadBtn">GPXをダウンロード</button>
     </div>
   </div>
@@ -440,16 +442,52 @@
     return m / 1000;
   }
 
-  // How much of a route is ridden twice, and how far it gets from the start.
-  // Both come from the geometry alone, so ranking candidate loops on them
-  // costs no extra requests. Points are binned to a ~45m grid; a bin holding
-  // two points more than 3km apart *along the route* means that stretch of
-  // road is being used a second time, rather than merely being adjacent.
-  function shapeStats(coords) {
+  // Surface of a routed edge, from the tags BRouter reports for it.
+  const UNPAVED_SURFACE = /surface=(gravel|fine_gravel|compacted|unpaved|dirt|ground|earth|sand|mud)/;
+  function edgeIsUnpaved(tags) {
+    if (UNPAVED_SURFACE.test(tags)) return true;
+    if (/tracktype=grade1\b/.test(tags)) return false;
+    if (/tracktype=grade[2-5]/.test(tags)) return true;
+    return /highway=track/.test(tags);   // an untagged forest road
+  }
+
+  // Repeated road, split by surface, plus how far the loop gets from the start.
+  // The split matters: meeting an oncoming rider on a narrow forest road is
+  // the thing to avoid, while riding the same sealed road twice is normal
+  // (you are on the other side of it). So gravel is judged on `repeatUnpaved`
+  // and road on `repeat`. All of it comes from the returned geometry, so
+  // ranking candidates this way costs no extra requests.
+  //
+  // Points are binned to a ~45m grid; a bin holding two points more than 3km
+  // apart *along the route* means that stretch is being ridden a second time,
+  // rather than the two simply being neighbours.
+  function routeStats(geo) {
+    const coords = geo.features[0].geometry.coordinates;
+    const messages = geo.features[0].properties.messages;
     const cum = [0];
     for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + haversineM(coords[i - 1], coords[i]));
     const total = cum[cum.length - 1];
-    if (!(total > 0)) return { repeat: 0, maxKm: 0 };
+    if (!(total > 0)) return { km: 0, repeat: 0, repeatUnpaved: 0, unpavedKm: 0, maxKm: 0 };
+
+    // classify each track point by walking the (route-ordered) message nodes
+    let cls = null;
+    if (messages && messages.length > 1) {
+      const h = messages[0];
+      const lonIdx = h.indexOf('Longitude'), latIdx = h.indexOf('Latitude'), tagIdx = h.indexOf('WayTags');
+      const nodes = [];
+      for (let i = 1; i < messages.length; i++) {
+        nodes.push([parseInt(messages[i][lonIdx], 10) / 1e6, parseInt(messages[i][latIdx], 10) / 1e6,
+                    edgeIsUnpaved(messages[i][tagIdx] || '')]);
+      }
+      if (nodes.length) {
+        cls = new Array(coords.length);
+        let j = 0;
+        for (let i = 0; i < coords.length; i++) {
+          while (j + 1 < nodes.length && haversineM(coords[i], nodes[j + 1]) < haversineM(coords[i], nodes[j])) j++;
+          cls[i] = nodes[j][2];
+        }
+      }
+    }
 
     const grid = new Map();
     for (let i = 0; i < coords.length; i++) {
@@ -466,13 +504,208 @@
         }
       }
     }
-    let dup = 0;
+    let dup = 0, dupUnpaved = 0, unpaved = 0;
     for (let i = 1; i < coords.length; i++) {
-      if (revisited.has(i) && revisited.has(i - 1)) dup += haversineM(coords[i - 1], coords[i]);
+      const d = haversineM(coords[i - 1], coords[i]);
+      const isUnpaved = cls ? cls[i] : false;
+      if (isUnpaved) unpaved += d;
+      if (revisited.has(i) && revisited.has(i - 1)) {
+        dup += d;
+        if (isUnpaved) dupUnpaved += d;
+      }
     }
     let maxM = 0;
     for (const c of coords) maxM = Math.max(maxM, haversineM(coords[0], c));
-    return { repeat: dup / total, maxKm: maxM / 1000 };
+    return { km: total / 1000, repeat: dup / total, repeatUnpaved: dupUnpaved / 1000,
+             unpavedKm: unpaved / 1000, maxKm: maxM / 1000 };
+  }
+
+  // ---------- Forest-road segments (gravel) ----------
+  // How a rider actually plans a gravel loop: list the forest roads near the
+  // start, pick a few, and join them with sealed roads until the total is
+  // right. Each track is then ridden once, so the only repetition left is on
+  // sealed road -- which is fine, you are on the other side of it. Meeting an
+  // oncoming rider on a narrow forest road is not fine, so a track that
+  // dead-ends is never used: you would have to come back down it.
+  const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+
+  async function fetchRoadNetwork(lat, lng, radiusM) {
+    // The whole network, not just the tracks: a track's ends have to be
+    // checked against the sealed roads they join, or every track that meets a
+    // road looks like a dead end.
+    const query = `[out:json][timeout:90];
+way["highway"]["highway"!~"^(footway|steps|proposed|construction|raceway|bus_guideway|escape|platform|corridor)$"](around:${Math.round(radiusM)},${lat},${lng});
+out geom;`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(OVERPASS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: query,
+          signal: AbortSignal.timeout(120000),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const text = await res.text();
+        if (!text.trimStart().startsWith('{')) throw new Error('overpass busy'); // it answers in HTML when loaded
+        return JSON.parse(text).elements.filter(e => e.type === 'way' && e.geometry && e.geometry.length > 1);
+      } catch (err) {
+        if (attempt === 2) throw err;
+        await new Promise(r => setTimeout(r, 4000 * (attempt + 1)));
+      }
+    }
+  }
+
+  function wayLengthM(geom) {
+    let m = 0;
+    for (let i = 1; i < geom.length; i++) m += haversineM([geom[i - 1].lon, geom[i - 1].lat], [geom[i].lon, geom[i].lat]);
+    return m;
+  }
+
+  // Stitch the OSM fragments of each forest road back together. OSM splits one
+  // 林道 into many ways; a rider thinks of it as a single road, and longer
+  // segments mean fewer connectors are needed to reach the target.
+  function buildSegments(ways) {
+    const nodeUse = new Map();
+    for (const w of ways) for (const n of w.nodes) nodeUse.set(n, (nodeUse.get(n) || 0) + 1);
+
+    const unpaved = ways.filter(w => {
+      const t = w.tags || {};
+      return t.highway === 'track' || UNPAVED_SURFACE.test('surface=' + (t.surface || ''))
+        || /^grade[2-5]$/.test(t.tracktype || '');
+    });
+    const byEnd = new Map();
+    const add = (n, w) => { if (!byEnd.has(n)) byEnd.set(n, []); byEnd.get(n).push(w); };
+    for (const w of unpaved) { add(w.nodes[0], w); add(w.nodes[w.nodes.length - 1], w); }
+
+    const claimed = new Set();
+    const segs = [];
+    for (const first of unpaved) {
+      if (claimed.has(first.id)) continue;
+      claimed.add(first.id);
+      let nodes = first.nodes.slice(), geom = first.geometry.slice();
+      for (const atFront of [true, false]) {
+        for (;;) {
+          const endNode = atFront ? nodes[0] : nodes[nodes.length - 1];
+          const here = (byEnd.get(endNode) || []).filter(w => !claimed.has(w.id));
+          // only follow a plain continuation: exactly two unpaved ways meeting,
+          // and nothing else joining there
+          if (here.length !== 1 || (nodeUse.get(endNode) || 0) !== 2) break;
+          const next = here[0];
+          claimed.add(next.id);
+          let nn = next.nodes.slice(), ng = next.geometry.slice();
+          if (nn[0] !== endNode) { nn.reverse(); ng.reverse(); }
+          if (atFront) {
+            nn.reverse(); ng.reverse();
+            nodes = nn.concat(nodes.slice(1));
+            geom = ng.concat(geom.slice(1));
+          } else {
+            nodes = nodes.concat(nn.slice(1));
+            geom = geom.concat(ng.slice(1));
+          }
+        }
+      }
+      const lenM = wayLengthM(geom);
+      if (lenM < 800) continue;
+      const a = geom[0], b = geom[geom.length - 1], mid = geom[Math.floor(geom.length / 2)];
+      segs.push({
+        id: first.id, name: (first.tags && first.tags.name) || '', km: lenM / 1000,
+        a: { lon: a.lon, lat: a.lat }, b: { lon: b.lon, lat: b.lat },
+        mid: { lon: mid.lon, lat: mid.lat },
+        // both ends must join the rest of the network; a spur would have to be
+        // ridden back down, which is the meeting-oncoming-riders case
+        through: (nodeUse.get(nodes[0]) || 0) > 1 && (nodeUse.get(nodes[nodes.length - 1]) || 0) > 1,
+      });
+    }
+    return segs;
+  }
+
+  const HOP_FACTOR = 1.45; // road distance per unit of straight-line hop
+
+  // Greedy tour with the connectors charged against the same budget, so the
+  // plan stops at the target instead of sailing past it.
+  function planTour(segs, start, targetKm, opts) {
+    const { minSegKm, maxSegFraction } = opts;
+    const maxCount = opts.maxCount || 7;
+    const pool = segs.filter(s => s.through && s.km >= minSegKm && s.km <= targetKm * maxSegFraction);
+    const used = new Set();
+    const tour = [];
+    let cur = { lon: start.lng, lat: start.lat };
+    let est = 0;
+    while (tour.length < maxCount) {
+      let best = null;
+      for (const s of pool) {
+        if (used.has(s.id)) continue;
+        const dA = haversineM([cur.lon, cur.lat], [s.a.lon, s.a.lat]) / 1000;
+        const dB = haversineM([cur.lon, cur.lat], [s.b.lon, s.b.lat]) / 1000;
+        const atA = dA <= dB;
+        const hop = Math.min(dA, dB);
+        const exit = atA ? s.b : s.a;
+        const home = haversineM([exit.lon, exit.lat], [start.lng, start.lat]) / 1000;
+        const addition = hop * HOP_FACTOR + s.km;
+        if (est + addition + home * HOP_FACTOR > targetKm * 1.08) continue;
+        const score = hop * HOP_FACTOR - s.km * 1.2; // long track, short hop
+        if (!best || score < best.score) best = { s, atA, addition, score };
+      }
+      if (!best) break;
+      used.add(best.s.id);
+      tour.push({ seg: best.s, entry: best.atA ? best.s.a : best.s.b, exit: best.atA ? best.s.b : best.s.a });
+      est += best.addition;
+      cur = best.atA ? best.s.b : best.s.a;
+    }
+    return { tour, gravelKm: tour.reduce((n, t) => n + t.seg.km, 0) };
+  }
+
+  function tourViaPoints(tour, start) {
+    const pts = [{ lat: start.lat, lng: start.lng }];
+    for (const t of tour) {
+      pts.push({ lat: t.entry.lat, lng: t.entry.lon });
+      if (t.seg.km > 2.5) pts.push({ lat: t.seg.mid.lat, lng: t.seg.mid.lon }); // hold the router on the track
+      pts.push({ lat: t.exit.lat, lng: t.exit.lon });
+    }
+    pts.push({ lat: start.lat, lng: start.lng });
+    return pts;
+  }
+
+  async function fitLoopViaSegments(start, targetKm) {
+    setStatus('周辺の林道を調べています…');
+    const radiusM = Math.min(20000, Math.max(6000, targetKm * 350));
+    const ways = await fetchRoadNetwork(start.lat, start.lng, radiusM);
+    const segs = buildSegments(ways);
+    const usable = segs.filter(s => s.through);
+    if (usable.length < 2) throw new Error('通り抜けできる林道が見つかりませんでした');
+    setStatus(`林道 ${usable.length}本から候補を組み立てています…`);
+
+    const variants = [];
+    for (const minSegKm of [Math.max(0.8, targetKm / 30), Math.max(1.2, targetKm / 22), Math.max(1.8, targetKm / 15)]) {
+      for (const maxSegFraction of [0.20, 0.30]) variants.push({ minSegKm, maxSegFraction });
+    }
+
+    let best = null;
+    for (const v of variants) {
+      let plan = planTour(segs, start, targetKm, v);
+      if (!plan.tour.length) continue;
+      for (let iter = 0; iter < 3; iter++) {
+        let geo;
+        setStatus(`林道 ${plan.tour.length}本のコースを計算中…`);
+        try { geo = await brouterRouteRaw(tourViaPoints(plan.tour, start), 'gravel', false); }
+        catch (err) { break; }
+        const st = routeStats(geo);
+        const err = (st.km - targetKm) / targetKm;
+        // what matters here is repetition on the unpaved parts
+        const score = Math.abs(err) + st.repeatUnpaved * 0.5;
+        if (!best || score < best.score) best = { score, geo, st, tour: plan.tour, pts: tourViaPoints(plan.tour, start) };
+        if (Math.abs(err) <= 0.06) break;
+        if (err > 0 && plan.tour.length > 1) plan = { ...plan, tour: plan.tour.slice(0, -1) };
+        else if (err < 0) {
+          const grown = planTour(segs, start, targetKm * (1 - err * 0.8), v);
+          if (grown.tour.length <= plan.tour.length) break;
+          plan = grown;
+        } else break;
+      }
+    }
+    if (!best) throw new Error('林道をつなぐコースを作れませんでした');
+    return { pts: best.pts, geo: best.geo, km: best.st.km, stats: best.st,
+             tour: best.tour, target: targetKm, method: 'segments' };
   }
 
   function trackLengthKm(geo) {
@@ -492,6 +725,7 @@
   // upper bound and shrink, so one over-ambitious guess can't kill the whole
   // run when a smaller radius would have produced a perfectly good course.
   let serverLimited = false;
+  let segmentsFallback = ''; // why the forest-road method was skipped, if it was
 
   // minValue is the smallest meaningful parameter: a loop radius must stay
   // positive, but a point-to-point detour offset of 0 is the valid "no via
@@ -589,7 +823,7 @@
     // yields, used only to seed the search.
     const SHAPES = [
       {
-        name: 'lobe', factor: 4.0,
+        name: 'lobe', factor: 4.5,
         build: (r, b) => [start,
           destinationPoint(start.lat, start.lng, b % 360, r),
           destinationPoint(start.lat, start.lng, (b + 50) % 360, r * 0.95),
@@ -618,9 +852,13 @@
         ? [start, destinationPoint(start.lat, start.lng, bearing, 0.2), start]
         : shape.build(rKm, bearing);
       const geo = await brouterRouteRaw(pts, profile, false);
-      const stats = shapeStats(geo.features[0].geometry.coordinates);
+      const stats = routeStats(geo);
       return { shape, bearing, rKm, pts, geo, km: trackLengthKm(geo),
-               ferry: ferryKm(geo), repeat: stats.repeat, maxKm: stats.maxKm };
+               ferry: ferryKm(geo), stats,
+               // gravel is judged on repetition over the unpaved parts only;
+               // repeating sealed road is normal and does not count against it
+               cost: profile === 'gravel' ? stats.repeatUnpaved / Math.max(stats.km, 1) : stats.repeat,
+               maxKm: stats.maxKm };
     }
 
     // Pass 1: one probe per shape and bearing, to see which corridors exist.
@@ -648,7 +886,7 @@
     // Rank on what we can see so far: least repeated road, with a penalty for
     // being far off the target distance (log ratio, since the radius still
     // has to be fitted and distance scales with it).
-    const seedScore = c => c.repeat + Math.abs(Math.log(c.km / targetKm)) * 0.35;
+    const seedScore = c => c.cost + Math.abs(Math.log(c.km / targetKm)) * 0.35;
     pool.sort((x, y) => seedScore(x) - seedScore(y));
 
     // Pass 2: fit the radius of the leading candidates. Seed-radius repetition
@@ -675,6 +913,11 @@
           let nextR = Math.abs(denom) < 1e-6
             ? b.rKm * 1.3
             : b.rKm + (targetKm - b.km) * (b.rKm - a.rKm) / denom;
+          // Distance is not monotonic in the radius -- near a coast one radius
+          // routes around a bay and the next does not -- so an undamped secant
+          // step can fling the radius to nonsense. Keep each step within half
+          // to double the current one.
+          nextR = Math.max(b.rKm * 0.5, Math.min(nextR, b.rKm * 2));
           nextR = Math.max(0.1, Math.min(nextR, targetKm));
           if (Math.abs(nextR - b.rKm) < 0.05) nextR = b.rKm * 1.2;
           const c = await safeTrial(nextR, i + 3);
@@ -696,7 +939,7 @@
     // better; among equals, trade repeated road against distance error.
     const clean = fitted.filter(f => f.ferry === 0);
     const finalPool = clean.length ? clean : fitted;
-    const finalScore = f => f.repeat + Math.abs(f.km - targetKm) / targetKm * 1.2;
+    const finalScore = f => f.cost + Math.abs(f.km - targetKm) / targetKm * 1.2;
     finalPool.sort((x, y) => finalScore(x) - finalScore(y));
     return { ...finalPool[0], target: targetKm };
   }
@@ -773,12 +1016,27 @@ ${trkpts}
 
     ferryWarning = false;
     serverLimited = false;
+    segmentsFallback = '';
     generateBtn.disabled = true;
     setStatus('ルート計算を開始します…');
     try {
-      const fit = loop
-        ? await fitLoop(startPoint, targetKm, profile)
-        : await fitPointToPoint(startPoint, goalPoint, targetKm, profile);
+      let fit = null;
+      // For a gravel loop, string real forest roads together the way a rider
+      // plans one. It needs Overpass, which is a busy community service, so
+      // fall back to the geometric search rather than failing.
+      if (loop && profile === 'gravel') {
+        try {
+          fit = await fitLoopViaSegments(startPoint, targetKm);
+        } catch (err) {
+          segmentsFallback = err.message;
+          setStatus('林道データを取得できなかったため、通常の方法で計算します…');
+        }
+      }
+      if (!fit) {
+        fit = loop
+          ? await fitLoop(startPoint, targetKm, profile)
+          : await fitPointToPoint(startPoint, goalPoint, targetKm, profile);
+      }
 
       const fKm = ferryKm(fit.geo);
       if (fKm > 0) ferryWarning = true;
@@ -793,6 +1051,13 @@ ${trkpts}
       document.getElementById('statDistance').textContent = fit.km.toFixed(1);
       document.getElementById('statTarget').textContent = targetKm.toFixed(1);
       document.getElementById('statAscend').textContent = ascendM(fit.geo);
+      const stats = fit.stats || routeStats(fit.geo);
+      document.getElementById('statUnpaved').textContent = stats.unpavedKm.toFixed(1);
+      const detail = [`最遠 ${stats.maxKm.toFixed(1)}km`,
+                      `同じ道の重複 ${(stats.repeat * 100).toFixed(1)}%`,
+                      `うち未舗装 ${stats.repeatUnpaved.toFixed(2)}km`];
+      if (fit.tour) detail.push(`林道 ${fit.tour.length}本`);
+      document.getElementById('statDetail').textContent = detail.join(' / ');
       resultEl.style.display = 'block';
 
       const warnLines = [];
@@ -808,6 +1073,9 @@ ${trkpts}
         warnLines.push(fKm > 0
           ? `フェリー区間を回避できませんでした（フェリー ${fKm.toFixed(1)}km を含みます）。陸路だけで到達できない区間があります。`
           : 'フェリーを回避するために一部の経路を変更しました。');
+      }
+      if (segmentsFallback) {
+        warnLines.push(`林道を選んで組み立てる方法が使えませんでした（${segmentsFallback}）。通常の方法で生成したため、未舗装路での折り返しが増えることがあります。`);
       }
       if (serverLimited) {
         warnLines.push('BRouterの公開サーバーが扱える探索範囲の上限に達したため、範囲を縮小して計算しました。長距離（目安200km超）のコースでは目標距離に届かないことがあります。');
