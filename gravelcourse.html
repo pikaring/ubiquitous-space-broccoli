@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Gravel Course Maker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --fg: #1c1c1e;
+    --muted: #7a7a80;
+    --accent: #2f7d4f;
+    --accent2: #b5651d;
+    --line: #e2e3e6;
+    --danger: #c0392b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    -webkit-text-size-adjust: 100%;
+  }
+  header {
+    text-align: center;
+    padding: 20px 16px 6px;
+  }
+  header h1 { margin: 0; font-size: 20px; letter-spacing: .5px; }
+  header p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; }
+  .layout {
+    display: flex;
+    flex-wrap: wrap-reverse;
+    gap: 16px;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 12px 16px 40px;
+  }
+  .panel { flex: 1 1 340px; min-width: 300px; }
+  .mapwrap { flex: 2 1 420px; min-width: 300px; }
+  #map {
+    width: 100%;
+    height: 420px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+  }
+  .card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    border: 1px solid var(--line);
+  }
+  .card h2 {
+    font-size: 12.5px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--muted);
+    margin: 0 0 10px;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  label:first-child { margin-top: 0; }
+  input[type=text], input[type=number] {
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 15px;
+    background: #fafafa;
+    color: var(--fg);
+  }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .searchbox { position: relative; }
+  .suggestions {
+    position: absolute;
+    z-index: 500;
+    left: 0; right: 0;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-top: 2px;
+    max-height: 180px;
+    overflow-y: auto;
+    box-shadow: 0 4px 14px rgba(0,0,0,.12);
+    display: none;
+  }
+  .suggestions div {
+    padding: 8px 10px;
+    font-size: 13.5px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--line);
+  }
+  .suggestions div:last-child { border-bottom: none; }
+  .suggestions div:hover { background: #f0f4f1; }
+  .pointinfo { font-size: 12px; color: var(--muted); margin-top: 3px; min-height: 15px; }
+  .toggles { display: flex; gap: 6px; margin-top: 8px; }
+  .toggles button {
+    flex: 1;
+    padding: 8px 4px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #fafafa;
+    font-size: 12.5px;
+    color: var(--fg);
+  }
+  .toggles button.active { background: var(--fg); color: #fff; border-color: var(--fg); }
+  .checkline { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13.5px; }
+  .surface-choice { display: flex; gap: 8px; margin-top: 4px; }
+  .surface-choice label {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 6px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--fg);
+    font-size: 13.5px;
+    margin: 0;
+    cursor: pointer;
+  }
+  .surface-choice input { width: auto; margin: 0; }
+  .surface-choice label:has(#surfaceGravel:checked) { border-color: var(--accent2); background: #fbf1e6; }
+  .surface-choice label:has(#surfaceRoad:checked) { border-color: var(--accent); background: #eef6f0; }
+  button.primary {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: var(--fg);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 14px;
+    cursor: pointer;
+  }
+  button.primary:disabled { opacity: .5; }
+  button.secondary {
+    width: 100%;
+    padding: 11px;
+    border: 1px solid var(--fg);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--fg);
+    font-size: 14px;
+    font-weight: 600;
+    margin-top: 10px;
+    cursor: pointer;
+  }
+  #status { font-size: 12.5px; color: var(--muted); margin-top: 10px; min-height: 16px; white-space: pre-line; }
+  #result { display: none; }
+  .statgrid { display: flex; gap: 10px; text-align: center; }
+  .statgrid div { flex: 1; }
+  .statgrid .num { font-size: 20px; font-weight: 700; }
+  .statgrid .label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .warn { color: var(--danger); font-size: 12.5px; margin-top: 8px; white-space: pre-line; }
+  .patterns { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .patterns button {
+    text-align: left;
+    padding: 9px 11px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: #fafafa;
+    color: var(--fg);
+    font-size: 12.5px;
+    line-height: 1.5;
+    cursor: pointer;
+  }
+  .patterns button.active { border-color: var(--fg); background: #fff; box-shadow: inset 0 0 0 1px var(--fg); }
+  .patterns .pname { font-weight: 600; font-size: 13px; }
+  .patterns .pmeta { color: var(--muted); }
+  footer { text-align: center; color: var(--muted); font-size: 11px; padding: 0 16px 24px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Gravel Course Maker</h1>
+  <p>OpenStreetMap (BRouter) でグラベル/ロードコースを自動生成してGPXを書き出します</p>
+</header>
+
+<div class="layout">
+  <div class="mapwrap">
+    <div id="map"></div>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <h2>スタート地点</h2>
+      <div class="searchbox">
+        <input type="text" id="startSearch" placeholder="住所・地名で検索（例: 東京駅）">
+        <div class="suggestions" id="startSuggest"></div>
+      </div>
+      <div class="toggles">
+        <button type="button" id="pickStartBtn" class="active">地図でスタートを設定</button>
+      </div>
+      <div class="pointinfo" id="startInfo">未設定 — 検索するか地図をクリック</div>
+    </div>
+
+    <div class="card">
+      <h2>ゴール地点</h2>
+      <div class="checkline">
+        <input type="checkbox" id="loopMode" checked>
+        <label for="loopMode" style="margin:0;">周回コース（スタート＝ゴール）</label>
+      </div>
+      <div id="goalFields" style="display:none;">
+        <div class="searchbox">
+          <input type="text" id="goalSearch" placeholder="住所・地名で検索（例: 渋谷駅）">
+          <div class="suggestions" id="goalSuggest"></div>
+        </div>
+        <div class="toggles">
+          <button type="button" id="pickGoalBtn">地図でゴールを設定</button>
+        </div>
+        <div class="pointinfo" id="goalInfo">未設定 — 検索するか地図をクリック</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>コース設定</h2>
+      <label for="distanceInput">目標距離 (km)</label>
+      <input type="number" id="distanceInput" value="40" min="1" max="600" step="1">
+
+      <label>路面タイプ</label>
+      <div class="surface-choice">
+        <label><input type="radio" name="surface" id="surfaceGravel" value="gravel" checked> グラベル</label>
+        <label><input type="radio" name="surface" id="surfaceRoad" value="fastbike"> ロード</label>
+      </div>
+      <div class="pointinfo">グラベルの周回は、周辺の林道から出口のあるものだけを選び、舗装路でつないで距離を合わせます。未舗装路での折り返し（すれ違いが危険）を最優先で避けるため、距離は目安です。候補を複数出すので選べます。フェリーを含む経路は除外。200km超は公開サーバーの制限で目標に届かない場合があります。</div>
+
+      <button type="button" class="primary" id="generateBtn">コースを生成</button>
+      <div id="status"></div>
+      <div class="warn" id="warnMsg" style="display:none;"></div>
+    </div>
+
+    <div class="card" id="result">
+      <h2>生成結果</h2>
+      <div class="statgrid">
+        <div><div class="num" id="statDistance">-</div><div class="label">実距離 km</div></div>
+        <div><div class="num" id="statTarget">-</div><div class="label">目標 km</div></div>
+        <div><div class="num" id="statAscend">-</div><div class="label">獲得標高 m</div></div>
+        <div><div class="num" id="statUnpaved">-</div><div class="label">未舗装 km</div></div>
+      </div>
+      <div class="pointinfo" id="statDetail"></div>
+      <div class="patterns" id="patterns"></div>
+      <button type="button" class="secondary" id="downloadBtn">GPXをダウンロード</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  ルーティング: <a href="https://brouter.de/" target="_blank" rel="noopener">BRouter</a> /
+  地点検索: <a href="https://nominatim.openstreetmap.org/" target="_blank" rel="noopener">Nominatim</a> —
+  地図・道路データ &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Map setup ----------
+  const map = L.map('map').setView([35.681236, 139.767125], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  const startIcon = L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#2f7d4f;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.5);"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });
+  const goalIcon = L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#c0392b;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.5);"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });
+
+  let startPoint = null;   // {lat, lng}
+  let goalPoint = null;    // {lat, lng}
+  let startMarker = null;
+  let goalMarker = null;
+  let routeLine = null;
+  let viaMarkers = [];
+  let pickTarget = 'start'; // 'start' | 'goal'
+  let lastGpxText = '';
+  let lastGpxName = 'gravel-course.gpx';
+
+  const loopModeEl = document.getElementById('loopMode');
+  const goalFieldsEl = document.getElementById('goalFields');
+  const pickStartBtn = document.getElementById('pickStartBtn');
+  const pickGoalBtn = document.getElementById('pickGoalBtn');
+  const startInfo = document.getElementById('startInfo');
+  const goalInfo = document.getElementById('goalInfo');
+  const statusEl = document.getElementById('status');
+  const warnEl = document.getElementById('warnMsg');
+  const generateBtn = document.getElementById('generateBtn');
+  const resultEl = document.getElementById('result');
+
+  function fmtLatLng(p) {
+    return p ? `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}` : '';
+  }
+
+  function setStart(p, label) {
+    startPoint = p;
+    if (startMarker) map.removeLayer(startMarker);
+    startMarker = L.marker(p, { icon: startIcon, draggable: true }).addTo(map);
+    startMarker.on('dragend', () => { setStart(startMarker.getLatLng(), null); });
+    startInfo.textContent = (label ? label + ' — ' : '') + fmtLatLng(p);
+  }
+
+  function setGoal(p, label) {
+    goalPoint = p;
+    if (goalMarker) map.removeLayer(goalMarker);
+    goalMarker = L.marker(p, { icon: goalIcon, draggable: true }).addTo(map);
+    goalMarker.on('dragend', () => { setGoal(goalMarker.getLatLng(), null); });
+    goalInfo.textContent = (label ? label + ' — ' : '') + fmtLatLng(p);
+  }
+
+  pickStartBtn.addEventListener('click', () => {
+    pickTarget = 'start';
+    pickStartBtn.classList.add('active');
+    pickGoalBtn.classList.remove('active');
+  });
+  pickGoalBtn.addEventListener('click', () => {
+    pickTarget = 'goal';
+    pickGoalBtn.classList.add('active');
+    pickStartBtn.classList.remove('active');
+  });
+
+  map.on('click', (e) => {
+    if (pickTarget === 'goal' && !loopModeEl.checked) {
+      setGoal(e.latlng, null);
+    } else {
+      setStart(e.latlng, null);
+    }
+  });
+
+  loopModeEl.addEventListener('change', () => {
+    goalFieldsEl.style.display = loopModeEl.checked ? 'none' : '';
+    if (loopModeEl.checked) {
+      pickTarget = 'start';
+      pickStartBtn.classList.add('active');
+      pickGoalBtn.classList.remove('active');
+    }
+  });
+
+  // ---------- Nominatim search ----------
+  let searchTimers = {};
+  function wireSearch(inputId, suggestId, onPick) {
+    const input = document.getElementById(inputId);
+    const box = document.getElementById(suggestId);
+    input.addEventListener('input', () => {
+      clearTimeout(searchTimers[inputId]);
+      const q = input.value.trim();
+      if (q.length < 2) { box.style.display = 'none'; return; }
+      searchTimers[inputId] = setTimeout(async () => {
+        try {
+          const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=ja&q=${encodeURIComponent(q)}`;
+          const res = await fetch(url);
+          const items = await res.json();
+          box.innerHTML = '';
+          if (!items.length) { box.style.display = 'none'; return; }
+          items.forEach(it => {
+            const div = document.createElement('div');
+            div.textContent = it.display_name;
+            div.addEventListener('click', () => {
+              const p = { lat: parseFloat(it.lat), lng: parseFloat(it.lon) };
+              onPick(p, it.display_name);
+              map.setView(p, 15);
+              box.style.display = 'none';
+              input.value = it.display_name;
+            });
+            box.appendChild(div);
+          });
+          box.style.display = 'block';
+        } catch (err) {
+          box.style.display = 'none';
+        }
+      }, 400);
+    });
+    document.addEventListener('click', (e) => {
+      if (!box.contains(e.target) && e.target !== input) box.style.display = 'none';
+    });
+  }
+  wireSearch('startSearch', 'startSuggest', (p, name) => setStart(p, name));
+  wireSearch('goalSearch', 'goalSuggest', (p, name) => setGoal(p, name));
+
+  // ---------- Geo helpers ----------
+  function toRad(d) { return d * Math.PI / 180; }
+  function toDeg(r) { return r * 180 / Math.PI; }
+
+  function bearing(lat1, lng1, lat2, lng2) {
+    const phi1 = toRad(lat1), phi2 = toRad(lat2), dLng = toRad(lng2 - lng1);
+    const y = Math.sin(dLng) * Math.cos(phi2);
+    const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLng);
+    return (toDeg(Math.atan2(y, x)) + 360) % 360;
+  }
+
+  function destinationPoint(lat, lng, bearingDeg, distanceKm) {
+    const R = 6371;
+    const brg = toRad(bearingDeg);
+    const lat1 = toRad(lat), lng1 = toRad(lng);
+    const dR = distanceKm / R;
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(dR) + Math.cos(lat1) * Math.sin(dR) * Math.cos(brg));
+    const lng2 = lng1 + Math.atan2(
+      Math.sin(brg) * Math.sin(dR) * Math.cos(lat1),
+      Math.cos(dR) - Math.sin(lat1) * Math.sin(lat2)
+    );
+    return { lat: toDeg(lat2), lng: ((toDeg(lng2) + 540) % 360) - 180 };
+  }
+
+  // Metres between two [lon, lat] pairs (GeoJSON order, as BRouter returns).
+  function haversineM(a, b) {
+    const R = 6371000;
+    const phi1 = toRad(a[1]), phi2 = toRad(b[1]);
+    const dPhi = toRad(b[1] - a[1]), dLng = toRad(b[0] - a[0]);
+    const h = Math.sin(dPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  // ---------- BRouter ----------
+  // Ferries are kept out two ways: the fastbike profile understands
+  // allow_ferries, so we switch it off there; the gravel profile has no such
+  // parameter, so any route that still contains a ferry is rejected by the
+  // caller and retried with a different loop orientation. Fencing ferries off
+  // with nogo circles was tried and abandoned -- when the far shore is another
+  // island (e.g. Hokkaido -> Honshu) it makes the waypoint unreachable and the
+  // search explodes until the public server kills it.
+  let ferryWarning = false;
+
+  async function brouterRouteRaw(points, profile, allowFerries, opts) {
+    const lonlats = points.map(p => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join('|');
+    // profile:correctMisplacedViaPoints trims out-and-back stubs created by
+    // detour via-points; profile:prefer_unpaved_paths biases the gravel
+    // profile toward narrower tracks/paths instead of paved local roads.
+    let url = `https://brouter.de/brouter?lonlats=${lonlats}&profile=${profile}&alternativeidx=0&format=geojson`
+      + `&profile:correctMisplacedViaPoints=1&profile:correctMisplacedViaPointsDistance=600`;
+    // prefer_unpaved biases the gravel profile onto tracks. When the route's
+    // shape is all the router has to go on, that is what finds gravel at all.
+    // When the tracks are pinned point by point along their length, it is no
+    // longer needed for that, and leaving it on sends the connectors hunting
+    // for gravel too -- which is where the doubling back was coming from.
+    if (profile === 'gravel') {
+      if (!(opts && opts.pinnedTracks)) url += '&profile:prefer_unpaved_paths=1';
+    } else if (!allowFerries) url += '&profile:allow_ferries=0';
+    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    if (!res.ok) throw new Error(`ルート計算に失敗しました (HTTP ${res.status})`);
+    const data = await res.json();
+    if (!data.features || !data.features.length) throw new Error('ルートが見つかりませんでした');
+    return data;
+  }
+
+  // BRouter's geojson "messages" table has one row per graph edge, with a
+  // WayTags column (e.g. "route=ferry ...") and the edge length in metres.
+  function ferryKm(geo) {
+    const messages = geo.features[0].properties.messages;
+    if (!messages || messages.length < 2) return 0;
+    const header = messages[0];
+    const tagsIdx = header.indexOf('WayTags');
+    const distIdx = header.indexOf('Distance');
+    let m = 0;
+    for (let i = 1; i < messages.length; i++) {
+      if (/\broute=ferry\b/.test(messages[i][tagsIdx] || '')) m += parseInt(messages[i][distIdx], 10) || 0;
+    }
+    return m / 1000;
+  }
+
+  // Surface of a routed edge, from the tags BRouter reports for it.
+  const UNPAVED_SURFACE = /surface=(gravel|fine_gravel|compacted|unpaved|dirt|ground|earth|sand|mud)/;
+  const PAVED_SURFACE = /surface=(asphalt|concrete|paved|paving_stones|sett|metal|wood)/;
+  function edgeIsUnpaved(tags) {
+    if (UNPAVED_SURFACE.test(tags)) return true;
+    if (PAVED_SURFACE.test(tags)) return false;
+    if (/tracktype=grade1\b/.test(tags)) return false;
+    if (/tracktype=grade[2-5]/.test(tags)) return true;
+    // An untagged track, path or bridleway is not a sealed road. Counting
+    // paths here matters: doubling back along one is the same hazard as
+    // doubling back along a forest road, and it used to go unmeasured.
+    return /highway=(track|path|bridleway)/.test(tags);
+  }
+
+  // Repeated road, split by surface, plus how far the loop gets from the start.
+  // The split matters: meeting an oncoming rider on a narrow forest road is
+  // the thing to avoid, while riding the same sealed road twice is normal
+  // (you are on the other side of it). So gravel is judged on `repeatUnpaved`
+  // and road on `repeat`. All of it comes from the returned geometry, so
+  // ranking candidates this way costs no extra requests.
+  //
+  // Points are binned to a ~45m grid; a bin holding two points more than 3km
+  // apart *along the route* means that stretch is being ridden a second time,
+  // rather than the two simply being neighbours.
+  function routeStats(geo) {
+    const coords = geo.features[0].geometry.coordinates;
+    const messages = geo.features[0].properties.messages;
+    const cum = [0];
+    for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + haversineM(coords[i - 1], coords[i]));
+    const total = cum[cum.length - 1];
+    if (!(total > 0)) return { km: 0, repeat: 0, repeatUnpaved: 0, unpavedKm: 0, maxKm: 0 };
+
+    // classify each track point by walking the (route-ordered) message nodes
+    let cls = null;
+    if (messages && messages.length > 1) {
+      const h = messages[0];
+      const lonIdx = h.indexOf('Longitude'), latIdx = h.indexOf('Latitude'), tagIdx = h.indexOf('WayTags');
+      const nodes = [];
+      for (let i = 1; i < messages.length; i++) {
+        nodes.push([parseInt(messages[i][lonIdx], 10) / 1e6, parseInt(messages[i][latIdx], 10) / 1e6,
+                    edgeIsUnpaved(messages[i][tagIdx] || '')]);
+      }
+      if (nodes.length) {
+        cls = new Array(coords.length);
+        let j = 0;
+        for (let i = 0; i < coords.length; i++) {
+          while (j + 1 < nodes.length && haversineM(coords[i], nodes[j + 1]) < haversineM(coords[i], nodes[j])) j++;
+          cls[i] = nodes[j][2];
+        }
+      }
+    }
+
+    const grid = new Map();
+    for (let i = 0; i < coords.length; i++) {
+      const key = `${Math.round(coords[i][1] / 0.0004)},${Math.round(coords[i][0] / 0.0004)}`;
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(i);
+    }
+    const revisited = new Set();
+    for (const idxs of grid.values()) {
+      if (idxs.length < 2) continue;
+      for (let a = 0; a < idxs.length; a++) {
+        for (let b = a + 1; b < idxs.length; b++) {
+          if (Math.abs(cum[idxs[b]] - cum[idxs[a]]) > 3000) { revisited.add(idxs[a]); revisited.add(idxs[b]); }
+        }
+      }
+    }
+    let dup = 0, dupUnpaved = 0, unpaved = 0;
+    for (let i = 1; i < coords.length; i++) {
+      const d = haversineM(coords[i - 1], coords[i]);
+      const isUnpaved = cls ? cls[i] : false;
+      if (isUnpaved) unpaved += d;
+      if (revisited.has(i) && revisited.has(i - 1)) {
+        dup += d;
+        if (isUnpaved) dupUnpaved += d;
+      }
+    }
+    let maxM = 0;
+    for (const c of coords) maxM = Math.max(maxM, haversineM(coords[0], c));
+    return { km: total / 1000, repeat: dup / total, repeatUnpaved: dupUnpaved / 1000,
+             unpavedKm: unpaved / 1000, maxKm: maxM / 1000 };
+  }
+
+  // ---------- Forest-road segments (gravel) ----------
+  // How a rider actually plans a gravel loop: list the forest roads near the
+  // start, pick a few, and join them with sealed roads until the total is
+  // right. Each track is then ridden once, so the only repetition left is on
+  // sealed road -- which is fine, you are on the other side of it. Meeting an
+  // oncoming rider on a narrow forest road is not fine, so a track that
+  // dead-ends is never used: you would have to come back down it.
+  const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+
+  async function fetchRoadNetwork(lat, lng, radiusM) {
+    // The whole network, not just the tracks: a track's ends have to be
+    // checked against the sealed roads they join, or every track that meets a
+    // road looks like a dead end.
+    const query = `[out:json][timeout:90];
+way["highway"]["highway"!~"^(footway|steps|proposed|construction|raceway|bus_guideway|escape|platform|corridor)$"](around:${Math.round(radiusM)},${lat},${lng});
+out geom;`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(OVERPASS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: query,
+          signal: AbortSignal.timeout(120000),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const text = await res.text();
+        if (!text.trimStart().startsWith('{')) throw new Error('overpass busy'); // it answers in HTML when loaded
+        return JSON.parse(text).elements.filter(e => e.type === 'way' && e.geometry && e.geometry.length > 1);
+      } catch (err) {
+        if (attempt === 2) throw err;
+        await new Promise(r => setTimeout(r, 4000 * (attempt + 1)));
+      }
+    }
+  }
+
+  function wayLengthM(geom) {
+    let m = 0;
+    for (let i = 1; i < geom.length; i++) m += haversineM([geom[i - 1].lon, geom[i - 1].lat], [geom[i].lon, geom[i].lat]);
+    return m;
+  }
+
+  // Stitch the OSM fragments of each forest road back together. OSM splits one
+  // 林道 into many ways; a rider thinks of it as a single road, and longer
+  // segments mean fewer connectors are needed to reach the target.
+  function buildSegments(ways) {
+    const nodeUse = new Map();
+    for (const w of ways) for (const n of w.nodes) nodeUse.set(n, (nodeUse.get(n) || 0) + 1);
+
+    const unpaved = ways.filter(w => {
+      const t = w.tags || {};
+      return t.highway === 'track' || UNPAVED_SURFACE.test('surface=' + (t.surface || ''))
+        || /^grade[2-5]$/.test(t.tracktype || '');
+    });
+    const byEnd = new Map();
+    const add = (n, w) => { if (!byEnd.has(n)) byEnd.set(n, []); byEnd.get(n).push(w); };
+    for (const w of unpaved) { add(w.nodes[0], w); add(w.nodes[w.nodes.length - 1], w); }
+
+    const claimed = new Set();
+    const segs = [];
+    for (const first of unpaved) {
+      if (claimed.has(first.id)) continue;
+      claimed.add(first.id);
+      let nodes = first.nodes.slice(), geom = first.geometry.slice();
+      for (const atFront of [true, false]) {
+        for (;;) {
+          const endNode = atFront ? nodes[0] : nodes[nodes.length - 1];
+          const here = (byEnd.get(endNode) || []).filter(w => !claimed.has(w.id));
+          // only follow a plain continuation: exactly two unpaved ways meeting,
+          // and nothing else joining there
+          if (here.length !== 1 || (nodeUse.get(endNode) || 0) !== 2) break;
+          const next = here[0];
+          claimed.add(next.id);
+          let nn = next.nodes.slice(), ng = next.geometry.slice();
+          if (nn[0] !== endNode) { nn.reverse(); ng.reverse(); }
+          if (atFront) {
+            nn.reverse(); ng.reverse();
+            nodes = nn.concat(nodes.slice(1));
+            geom = ng.concat(geom.slice(1));
+          } else {
+            nodes = nodes.concat(nn.slice(1));
+            geom = geom.concat(ng.slice(1));
+          }
+        }
+      }
+      const lenM = wayLengthM(geom);
+      if (lenM < 800) continue;
+      const a = geom[0], b = geom[geom.length - 1], mid = geom[Math.floor(geom.length / 2)];
+      // A spine of points roughly every 1.2km. Passing these as via points is
+      // what holds the router on the track, so the gravel bias no longer has
+      // to do that job and the connectors can be left to find sealed roads.
+      const spine = [];
+      let since = 0;
+      for (let i = 1; i < geom.length - 1; i++) {
+        since += haversineM([geom[i - 1].lon, geom[i - 1].lat], [geom[i].lon, geom[i].lat]);
+        if (since >= 1200) { spine.push({ lon: geom[i].lon, lat: geom[i].lat }); since = 0; }
+      }
+      segs.push({
+        id: first.id, name: (first.tags && first.tags.name) || '', km: lenM / 1000,
+        a: { lon: a.lon, lat: a.lat }, b: { lon: b.lon, lat: b.lat },
+        mid: { lon: mid.lon, lat: mid.lat }, spine,
+        // both ends must join the rest of the network; a spur would have to be
+        // ridden back down, which is the meeting-oncoming-riders case
+        through: (nodeUse.get(nodes[0]) || 0) > 1 && (nodeUse.get(nodes[nodes.length - 1]) || 0) > 1,
+      });
+    }
+    return segs;
+  }
+
+  const HOP_FACTOR = 1.45; // road distance per unit of straight-line hop
+
+  // Greedy tour with the connectors charged against the same budget, so the
+  // plan stops at the target instead of sailing past it.
+  function planTour(segs, start, targetKm, opts) {
+    const { minSegKm, maxSegFraction } = opts;
+    const maxCount = opts.maxCount || 7;
+    const banned = opts.banned || new Set();
+    const pool = segs.filter(s => s.through && !banned.has(s.id)
+      && s.km >= minSegKm && s.km <= targetKm * maxSegFraction);
+    const used = new Set();
+    const tour = [];
+    let cur = { lon: start.lng, lat: start.lat };
+    let est = 0;
+    while (tour.length < maxCount) {
+      let best = null;
+      for (const s of pool) {
+        if (used.has(s.id)) continue;
+        // Constraining which way the first track lies is what makes the
+        // variants come back as different rides -- a loop that heads north
+        // and one that heads east -- rather than the same roads reordered.
+        if (!tour.length && opts.firstBearing !== undefined) {
+          const mid = { lat: (s.a.lat + s.b.lat) / 2, lng: (s.a.lon + s.b.lon) / 2 };
+          const brg = bearing(start.lat, start.lng, mid.lat, mid.lng);
+          let delta = Math.abs(brg - opts.firstBearing) % 360;
+          if (delta > 180) delta = 360 - delta;
+          if (delta > 60) continue;
+        }
+        const dA = haversineM([cur.lon, cur.lat], [s.a.lon, s.a.lat]) / 1000;
+        const dB = haversineM([cur.lon, cur.lat], [s.b.lon, s.b.lat]) / 1000;
+        const atA = dA <= dB;
+        const hop = Math.min(dA, dB);
+        const exit = atA ? s.b : s.a;
+        const home = haversineM([exit.lon, exit.lat], [start.lng, start.lat]) / 1000;
+        const addition = hop * HOP_FACTOR + s.km;
+        if (est + addition + home * HOP_FACTOR > targetKm * 1.08) continue;
+        // Higher trackBias favours long tracks over nearby ones. Varying it
+        // is what makes the variants pick genuinely different sets of roads,
+        // rather than the same set reordered.
+        const score = hop * HOP_FACTOR - s.km * (opts.trackBias || 1.2);
+        if (!best || score < best.score) best = { s, atA, addition, score };
+      }
+      if (!best) break;
+      used.add(best.s.id);
+      tour.push({ seg: best.s, entry: best.atA ? best.s.a : best.s.b, exit: best.atA ? best.s.b : best.s.a });
+      est += best.addition;
+      cur = best.atA ? best.s.b : best.s.a;
+    }
+    // Both orderings are kept as candidates rather than one replacing the
+    // other: reordering helps when the tracks are spread out (Iwamizawa 100km,
+    // repeated road 20.6% -> 13.4%) and hurts when they are not, so which one
+    // wins is decided by scoring the routes, not assumed here.
+    const greedy = orientTour(tour, start);
+    const improved = improveTourOrder(tour, start);
+    const tours = [greedy];
+    if (Math.abs(connectorLengthM(improved, start) - connectorLengthM(greedy, start)) > 1) tours.push(improved);
+    return { tours, tour: greedy, gravelKm: tour.reduce((n, t) => n + t.seg.km, 0) };
+  }
+
+  // The greedy pick above chooses which tracks to ride, but leaves them in the
+  // order it happened to find them, which zigzags when they are clustered.
+  // A 2-opt pass over the straight-line connector length fixes most of that,
+  // and costs nothing: no routing is involved. On the Iwamizawa 100km course
+  // it cut the connectors from 44.8km to 39.9km and the repeated road from
+  // 20.6% to 13.4%.
+  function orientTour(order, start) {
+    let cur = { lon: start.lng, lat: start.lat };
+    const out = [];
+    for (const t of order) {
+      const dA = haversineM([cur.lon, cur.lat], [t.seg.a.lon, t.seg.a.lat]);
+      const dB = haversineM([cur.lon, cur.lat], [t.seg.b.lon, t.seg.b.lat]);
+      const atA = dA <= dB;
+      out.push({ seg: t.seg, entry: atA ? t.seg.a : t.seg.b, exit: atA ? t.seg.b : t.seg.a });
+      cur = atA ? t.seg.b : t.seg.a;
+    }
+    return out;
+  }
+
+  function connectorLengthM(order, start) {
+    let m = 0;
+    let cur = { lon: start.lng, lat: start.lat };
+    for (const t of order) {
+      m += haversineM([cur.lon, cur.lat], [t.entry.lon, t.entry.lat]);
+      cur = t.exit;
+    }
+    return m + haversineM([cur.lon, cur.lat], [start.lng, start.lat]);
+  }
+
+  function improveTourOrder(tour, start) {
+    if (tour.length < 3) return orientTour(tour, start);
+    let best = orientTour(tour, start);
+    let bestM = connectorLengthM(best, start);
+    for (let guard = 0; guard < 50; guard++) {
+      let improved = false;
+      for (let i = 0; i < best.length - 1; i++) {
+        for (let j = i + 1; j < best.length; j++) {
+          const candidate = best.slice(0, i)
+            .concat(best.slice(i, j + 1).reverse(), best.slice(j + 1));
+          const oriented = orientTour(candidate, start);
+          const m = connectorLengthM(oriented, start);
+          if (m < bestM - 1) { best = oriented; bestM = m; improved = true; }
+        }
+      }
+      if (!improved) break;
+    }
+    return best;
+  }
+
+  function tourViaPoints(tour, start) {
+    const pts = [{ lat: start.lat, lng: start.lng }];
+    for (const t of tour) {
+      pts.push({ lat: t.entry.lat, lng: t.entry.lon });
+      const spine = t.seg.spine || [];
+      // walk the spine in the direction of travel
+      const forward = t.entry.lat === t.seg.a.lat && t.entry.lon === t.seg.a.lon;
+      const ordered = forward ? spine : spine.slice().reverse();
+      for (const p of ordered) pts.push({ lat: p.lat, lng: p.lon });
+      pts.push({ lat: t.exit.lat, lng: t.exit.lon });
+    }
+    pts.push({ lat: start.lat, lng: start.lng });
+    return pts;
+  }
+
+  // Which of the chosen tracks did the route ride in both directions? Tags
+  // say a track joins the network at both ends, but a spur that climbs to a
+  // summit and stops can still look that way -- so this checks what the router
+  // actually did: passing the same track's midpoint twice, far apart along the
+  // route, means it went up and came back down.
+  function doubledBackSegments(geo, tour) {
+    const coords = geo.features[0].geometry.coordinates;
+    const cum = [0];
+    for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + haversineM(coords[i - 1], coords[i]));
+    const doubled = [];
+    for (const t of tour) {
+      const mid = [t.seg.mid.lon, t.seg.mid.lat];
+      let first = null, last = null;
+      for (let i = 0; i < coords.length; i++) {
+        if (haversineM(coords[i], mid) < 60) {
+          if (first === null) first = cum[i];
+          last = cum[i];
+        }
+      }
+      if (first !== null && last - first > 2000) doubled.push(t.seg.id);
+    }
+    return doubled;
+  }
+
+  // Riding an unpaved road in both directions is the case to design out --
+  // a track that climbs to a summit and stops leaves you descending into
+  // whoever is coming up. So it is a filter, not a cost: candidates over the
+  // threshold are dropped even when they fit the distance perfectly. Distance
+  // is the looser requirement, and several patterns are returned rather than
+  // one, because which line through the hills a rider wants is not something
+  // the numbers settle.
+  const UNPAVED_REPEAT_LIMIT = 0.015;  // share of the route, ~1.5%
+  const DISTANCE_WINDOW = 0.10;        // +/-10% of target
+
+  async function fitLoopViaSegments(start, targetKm) {
+    setStatus('周辺の林道を調べています…');
+    const radiusM = Math.min(20000, Math.max(6000, targetKm * 350));
+    const ways = await fetchRoadNetwork(start.lat, start.lng, radiusM);
+    const segs = buildSegments(ways);
+    const usable = segs.filter(s => s.through);
+    if (usable.length < 2) throw new Error('通り抜けできる林道が見つかりませんでした');
+    setStatus(`林道 ${usable.length}本から候補を組み立てています…`);
+
+    const variants = [];
+    for (const minSegKm of [Math.max(0.8, targetKm / 26), Math.max(1.5, targetKm / 15)]) {
+      for (const trackBias of [0.9, 1.5]) {
+        variants.push({ minSegKm, maxSegFraction: 0.30, trackBias });
+        for (const firstBearing of [0, 90, 180, 270]) {
+          variants.push({ minSegKm, maxSegFraction: 0.30, trackBias, firstBearing });
+        }
+      }
+    }
+
+    const seen = new Set();
+    const collected = [];
+    const banned = new Set();   // tracks the router was seen riding both ways
+    let probed = 0;
+    for (const v of variants) {
+      let plan = planTour(segs, start, targetKm, { ...v, banned });
+      if (!plan.tour.length) continue;
+      for (let iter = 0; iter < 3; iter++) {
+        const tours = plan.tours || [plan.tour];
+        let bestHere = null;
+        for (const candidateTour of tours) {
+          const key = candidateTour.map(t => `${t.seg.id}:${t.entry.lat.toFixed(4)}`).join(',');
+          if (seen.has(key)) continue;
+          seen.add(key);
+          probed++;
+          setStatus(`林道 ${candidateTour.length}本のコースを計算中… (${probed}件目)`);
+          const viaPts = tourViaPoints(candidateTour, start);
+          // Pinning the tracks lets the connectors stay on sealed road, which
+          // is what stops the doubling back; the plain gravel-biased routing
+          // finds more gravel. Which is better depends on the area, so both
+          // are scored.
+          for (const opts of [{ pinnedTracks: true }, {}]) {
+            let geo;
+            try { geo = await brouterRouteRaw(viaPts, 'gravel', false, opts); }
+            catch (e) { continue; }
+            const st = routeStats(geo);
+            const entry = {
+              geo, stats: st, km: st.km, tour: candidateTour, pts: viaPts,
+              err: (st.km - targetKm) / targetKm,
+              unpavedRepeatShare: st.repeatUnpaved / Math.max(st.km, 1),
+              unpavedShare: st.unpavedKm / Math.max(st.km, 1),
+            };
+            collected.push(entry);
+            if (entry.unpavedRepeatShare > UNPAVED_REPEAT_LIMIT) {
+              // Ban the offenders so later variants stop reaching for them.
+              for (const id of doubledBackSegments(geo, candidateTour)) banned.add(id);
+            }
+            if (!bestHere || entry.unpavedRepeatShare < bestHere.unpavedRepeatShare) bestHere = entry;
+          }
+        }
+        if (!bestHere) break;
+        plan = { ...plan, tour: bestHere.tour };
+        if (Math.abs(bestHere.err) <= 0.06) break;
+        if (bestHere.err > 0 && plan.tour.length > 1) {
+          // Drop whichever track costs the most to reach per kilometre it
+          // adds. Always dropping the last one wasted the correction on
+          // whatever happened to be at the end of the list.
+          let worst = 0, worstRatio = -Infinity;
+          for (let i = 0; i < plan.tour.length; i++) {
+            const prev = i === 0 ? { lon: start.lng, lat: start.lat } : plan.tour[i - 1].exit;
+            const reach = haversineM([prev.lon, prev.lat], [plan.tour[i].entry.lon, plan.tour[i].entry.lat]) / 1000;
+            const ratio = reach / Math.max(plan.tour[i].seg.km, 0.1);
+            if (ratio > worstRatio) { worstRatio = ratio; worst = i; }
+          }
+          plan = { ...plan, tour: plan.tour.filter((_, i) => i !== worst) };
+          plan.tours = [plan.tour];
+        }
+        else if (bestHere.err < 0) {
+          const grown = planTour(segs, start, targetKm * (1 - bestHere.err * 0.8), { ...v, banned });
+          if (grown.tour.length <= plan.tour.length) break;
+          plan = grown;
+        } else break;
+      }
+    }
+    if (!collected.length) throw new Error('林道をつなぐコースを作れませんでした');
+
+    const results = selectPatterns(collected, targetKm);
+    return { ...results[0], target: targetKm, method: 'segments', results };
+  }
+
+  // Keep the courses that meet the constraint, prefer those inside the
+  // distance window, and hand back a few that differ from one another.
+  function selectPatterns(collected, targetKm, limit) {
+    const max = limit || 3;
+    const clean = collected.filter(c => c.unpavedRepeatShare <= UNPAVED_REPEAT_LIMIT);
+    // Nothing clean: fall back to least-bad, ordered by repetition instead.
+    const pool = clean.length ? clean : collected.slice()
+      .sort((a, b) => a.unpavedRepeatShare - b.unpavedRepeatShare);
+    // Among courses that clear the repeat limit, the better gravel course is
+    // the one with more gravel in it; distance settles ties.
+    const byQuality = (a, b) =>
+      ((b.unpavedShare || 0) - (a.unpavedShare || 0)) || (Math.abs(a.err) - Math.abs(b.err));
+    const inWindow = pool.filter(c => Math.abs(c.err) <= DISTANCE_WINDOW).sort(byQuality);
+    const outside = pool.filter(c => Math.abs(c.err) > DISTANCE_WINDOW).sort(byQuality);
+    // Courses inside the distance window come first, but the remaining slots
+    // are filled from outside it rather than left empty -- a course that is
+    // long but never doubles back is still worth offering.
+    const ranked = inWindow.concat(outside);
+
+    // Distinct patterns: don't offer three versions of the same ride.
+    const out = [];
+    for (const cand of ranked) {
+      const ids = new Set(cand.tour ? cand.tour.map(t => t.seg.id) : []);
+      const duplicate = out.some(o => {
+        const other = new Set(o.tour ? o.tour.map(t => t.seg.id) : []);
+        if (!ids.size || !other.size) return Math.abs(o.km - cand.km) < 0.5;
+        let shared = 0;
+        for (const id of ids) if (other.has(id)) shared++;
+        return shared / Math.max(ids.size, other.size) > 0.6;
+      });
+      if (!duplicate) out.push(cand);
+      if (out.length >= max) break;
+    }
+    return out.length ? out : ranked.slice(0, max);
+  }
+
+  function trackLengthKm(geo) {
+    const p = geo.features[0].properties;
+    return parseFloat(p['track-length']) / 1000;
+  }
+  function ascendM(geo) {
+    const p = geo.features[0].properties;
+    return Math.round(parseFloat(p['filtered ascend']));
+  }
+
+  function setStatus(msg) { statusEl.textContent = msg; }
+
+  // The public BRouter instance aborts searches it considers too expensive
+  // ("killed by thread-priority-watchdog"), which large loops hit easily.
+  // Treat a failed trial as "this parameter is too big": remember it as an
+  // upper bound and shrink, so one over-ambitious guess can't kill the whole
+  // run when a smaller radius would have produced a perfectly good course.
+  let serverLimited = false;
+  let segmentsFallback = ''; // why the forest-road method was skipped, if it was
+
+  // minValue is the smallest meaningful parameter: a loop radius must stay
+  // positive, but a point-to-point detour offset of 0 is the valid "no via
+  // point, go direct" case and must not be shrunk away.
+  function makeSafeTrial(trial, minValue) {
+    let upperBound = Infinity; // smallest parameter value known to fail
+    return async function safeTrial(x, n) {
+      let v = Math.min(x, upperBound * 0.9);
+      for (let k = 0; k < 6; k++) {
+        if (v < minValue) return null;
+        try {
+          return await trial(v, n);
+        } catch (err) {
+          serverLimited = true;
+          upperBound = Math.min(upperBound, v);
+          if (v <= minValue) return null; // cannot shrink any further
+          v = Math.max(minValue, v * 0.8);
+          setStatus(`範囲が広すぎたため縮小して再試行中… (${v.toFixed(1)}km)`);
+        }
+      }
+      return null;
+    };
+  }
+
+  // Fit a point-to-point route to roughly match targetKm by inserting a
+  // perpendicular detour via-point, adjusted by a secant search.
+  async function fitPointToPoint(start, goal, targetKm, profile) {
+    const midLat = (start.lat + goal.lat) / 2;
+    const midLng = (start.lng + goal.lng) / 2;
+    const brg = (bearing(start.lat, start.lng, goal.lat, goal.lng) + 90) % 360;
+
+    // Unlike a loop, both ends are fixed here, so there is no orientation to
+    // rotate: if the ferry-free attempt finds nothing, the crossing may simply
+    // have no land alternative (island to mainland). Fall back to allowing
+    // ferries rather than refusing to produce a route at all.
+    let allowFerries = false;
+
+    async function trial(offsetKm, n) {
+      const via = offsetKm > 0.05 ? destinationPoint(midLat, midLng, brg, offsetKm) : null;
+      const pts = via ? [start, via, goal] : [start, goal];
+      setStatus(`ルート計算中… (${n}回目, 迂回オフセット ${offsetKm.toFixed(1)}km)`);
+      let geo;
+      try {
+        geo = await brouterRouteRaw(pts, profile, allowFerries);
+      } catch (err) {
+        if (allowFerries) throw err;
+        allowFerries = true;
+        setStatus('陸路が見つからないため、フェリーを許可して再計算中…');
+        geo = await brouterRouteRaw(pts, profile, true);
+      }
+      return { offsetKm, pts, geo, km: trackLengthKm(geo) };
+    }
+
+    const safeTrial = makeSafeTrial(trial, 0);
+
+    let a = await safeTrial(0, 1);
+    if (!a) throw new Error('ルートを計算できませんでした。地点を道路の近くに設定してください。');
+    if (a.km >= targetKm * 0.95) return { ...a, target: targetKm };
+
+    let bOffset = Math.max(0.5, targetKm - a.km);
+    let b = await safeTrial(bOffset, 2);
+    if (!b) return { ...a, target: targetKm };
+    let best = Math.abs(b.km - targetKm) < Math.abs(a.km - targetKm) ? b : a;
+
+    for (let i = 0; i < 5; i++) {
+      if (Math.abs(best.km - targetKm) <= targetKm * 0.05) break;
+      const denom = b.km - a.km;
+      let nextOffset = Math.abs(denom) < 1e-6
+        ? b.offsetKm * 1.5
+        : b.offsetKm + (targetKm - b.km) * (b.offsetKm - a.offsetKm) / denom;
+      nextOffset = Math.max(0, Math.min(nextOffset, targetKm * 2.5));
+      if (Math.abs(nextOffset - b.offsetKm) < 0.05) nextOffset = b.offsetKm + 0.3;
+      const c = await safeTrial(nextOffset, i + 3);
+      if (!c) break;
+      // safeTrial clamps to the largest offset the server will accept; once
+      // it stops moving, further iterations just re-evaluate the same route.
+      if (Math.abs(c.offsetKm - b.offsetKm) < 0.05) break;
+      if (Math.abs(c.km - targetKm) < Math.abs(best.km - targetKm)) best = c;
+      a = b; b = c;
+    }
+    return { ...best, target: targetKm };
+  }
+
+  // Fit a loop route (start === finish) by growing/shrinking an asymmetric
+  // 3-point radius around the start, adjusted by a secant search.
+  async function fitLoop(start, targetKm, profile) {
+    // Two loop shapes, because neither wins everywhere, and each is fitted on
+    // a different knob.
+    //
+    // The "lobe" is how a brevet is drawn: fix the farthest point, then widen
+    // the loop left and right until the distance comes out. So its knob is the
+    // angle between the two via points, and the radius stays put. Fitting it
+    // on the radius instead was actively harmful -- an Aomori 300km candidate
+    // sat at 242km with 0.5% repeated road, and pushing the radius out to
+    // reach 300km drove the far point into dead ends and took it to 82%.
+    // Widening the same candidate instead walks 197 -> 242 -> 289 -> 342km
+    // with repetition staying under 1%.
+    //
+    // The six-point "ring" stays compact and suits dense networks and very
+    // long targets, where there is no single corridor to run out along. Its
+    // knob is the radius.
+    const SHAPES = [
+      {
+        name: 'lobe', knobMin: 12, knobMax: 140,
+        seed: () => ({ radius: Math.max(0.4, targetKm / 4.5), knob: 50 }),
+        build: (p, b) => [start,
+          destinationPoint(start.lat, start.lng, b % 360, p.radius),
+          destinationPoint(start.lat, start.lng, (b + p.knob) % 360, p.radius * 0.95),
+          start],
+      },
+      {
+        name: 'ring', knobMin: 0.2, knobMax: Infinity,
+        seed: () => ({ knob: Math.max(0.4, targetKm / 11) }),
+        build: (p, b) => {
+          const w = [1.0, 1.1, 0.9, 1.05, 0.95, 1.08];
+          const pts = [start];
+          for (let i = 0; i < w.length; i++) {
+            pts.push(destinationPoint(start.lat, start.lng, (b + 25 + i * 60) % 360, p.knob * w[i]));
+          }
+          pts.push(start);
+          return pts;
+        },
+      },
+    ];
+    // Bearing matters near coastlines (a via-point dropped at sea is
+    // unroutable) and on sparse networks (it decides which corridor the loop
+    // uses), so several are tried.
+    const BEARINGS = [0, 90, 180, 270];
+
+    async function attempt(shape, params, bearing) {
+      const pts = shape.build(params, bearing);
+      const geo = await brouterRouteRaw(pts, profile, false);
+      const stats = routeStats(geo);
+      return {
+        shape, bearing, params, pts, geo, km: trackLengthKm(geo),
+        ferry: ferryKm(geo), stats,
+        // Gravel is judged on repetition over the unpaved parts alone --
+        // repeating sealed road is normal, you are on the other side of it.
+        // Road is judged on total repetition plus how far it strays onto
+        // unpaved, because the router will take an unsealed shortcut and come
+        // straight back down it, which is not a road course.
+        cost: profile === 'gravel'
+          ? stats.repeatUnpaved / Math.max(stats.km, 1)
+          : stats.repeat + stats.unpavedKm / Math.max(stats.km, 1),
+        maxKm: stats.maxKm,
+      };
+    }
+
+    // Pass 1: one probe per shape and bearing, to see which corridors exist.
+    const candidates = [];
+    const ferryOnly = [];
+    for (const shape of SHAPES) {
+      for (const bearing of BEARINGS) {
+        setStatus(`経路の候補を探索中… (${shape.name === 'lobe' ? '往復型' : '周回型'}, 方位 ${bearing}°)`);
+        let res;
+        try {
+          res = await attempt(shape, shape.seed(), bearing);
+        } catch (err) {
+          continue; // unroutable from here: usually open water
+        }
+        if (res.ferry > 0) { ferryOnly.push(res); continue; }
+        candidates.push(res);
+      }
+    }
+    if (!candidates.length && !ferryOnly.length) {
+      throw new Error('ルートを計算できませんでした。地点を道路の近くに設定してください。');
+    }
+    const pool = candidates.length ? candidates : ferryOnly;
+
+    // Rank on what we can see so far: least repeated road, with a penalty for
+    // being far off the target distance (log ratio, since the knob still has
+    // to be fitted and distance grows with it).
+    const seedScore = c => c.cost + Math.abs(Math.log(c.km / targetKm)) * 0.35;
+    pool.sort((x, y) => seedScore(x) - seedScore(y));
+
+    // Pass 2: fit the knob of the leading candidates. Seed repetition turned
+    // out not to predict the fitted result, so more than one is carried
+    // through and the decision made afterwards.
+    const fitted = [];
+    for (const cand of pool.slice(0, 3)) {
+      const shape = cand.shape;
+      const label = shape.name === 'lobe' ? '往復型' : '周回型';
+      const unit = shape.name === 'lobe' ? '°' : 'km';
+      const trial = async (knob, n) => {
+        setStatus(`距離を合わせています… (${label} 方位 ${cand.bearing}°, ${n}回目, ${knob.toFixed(1)}${unit})`);
+        return await attempt(shape, { ...cand.params, knob }, cand.bearing);
+      };
+      const safeTrial = makeSafeTrial(trial, shape.knobMin);
+
+      const clampKnob = k => Math.max(shape.knobMin, Math.min(k, shape.knobMax));
+      let a = await safeTrial(cand.params.knob, 1);
+      if (!a) continue;
+      let b = await safeTrial(clampKnob(a.params.knob * (targetKm / Math.max(a.km, 0.1))), 2);
+      let best = a;
+      if (b) {
+        if (Math.abs(b.km - targetKm) < Math.abs(a.km - targetKm)) best = b;
+        for (let i = 0; i < 4; i++) {
+          if (Math.abs(best.km - targetKm) <= targetKm * 0.05) break;
+          const denom = b.km - a.km;
+          let next = Math.abs(denom) < 1e-6
+            ? b.params.knob * 1.3
+            : b.params.knob + (targetKm - b.km) * (b.params.knob - a.params.knob) / denom;
+          // Distance is not monotonic in the knob -- near a coast one value
+          // routes around a bay and the next does not -- so an undamped secant
+          // step can fling it to nonsense. Keep each step within half to double.
+          next = clampKnob(Math.max(b.params.knob * 0.5, Math.min(next, b.params.knob * 2)));
+          if (Math.abs(next - b.params.knob) < 0.05) next = clampKnob(b.params.knob * 1.2);
+          const c = await safeTrial(next, i + 3);
+          if (!c) break;
+          // safeTrial clamps to the largest value the server will accept; once
+          // it stops moving there is nothing new to learn.
+          if (Math.abs(c.params.knob - b.params.knob) < 0.05) break;
+          if (Math.abs(c.km - targetKm) < Math.abs(best.km - targetKm)) best = c;
+          a = b; b = c;
+        }
+      }
+      fitted.push(best);
+    }
+    if (!fitted.length) {
+      throw new Error('ルートを計算できませんでした。地点を道路の近くに設定してください。');
+    }
+
+    // Prefer a ferry-free result even if a ferry-bound one fits the distance
+    // better; among equals, trade repeated road against distance error.
+    const clean = fitted.filter(f => f.ferry === 0);
+    const finalPool = clean.length ? clean : fitted;
+    const finalScore = f => f.cost + Math.abs(f.km - targetKm) / targetKm * 1.2;
+    finalPool.sort((x, y) => finalScore(x) - finalScore(y));
+    // Offer the runners-up too: they are different shapes or bearings, so they
+    // are genuinely different rides, and the numbers do not settle which one a
+    // rider wants.
+    const results = finalPool.slice(0, 3).map(f => ({
+      ...f, err: (f.km - targetKm) / targetKm,
+      unpavedRepeatShare: f.stats.repeatUnpaved / Math.max(f.stats.km, 1),
+    }));
+    return { ...results[0], target: targetKm, results };
+  }
+
+  // ---------- GPX ----------
+  function escapeXml(s) {
+    return String(s).replace(/[<>&'"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
+  }
+
+  function buildGpx(coords, name) {
+    const now = new Date().toISOString();
+    const trkpts = coords.map(c => {
+      const [lon, lat, ele] = c;
+      const eleTag = (ele !== undefined && ele !== null) ? `<ele>${ele}</ele>` : '';
+      return `      <trkpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}">${eleTag}</trkpt>`;
+    }).join('\n');
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Gravel Course Maker" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>${escapeXml(name)}</name>
+    <time>${now}</time>
+  </metadata>
+  <trk>
+    <name>${escapeXml(name)}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>
+`;
+  }
+
+  // ---------- Draw result ----------
+  function drawResult(fit) {
+    if (routeLine) map.removeLayer(routeLine);
+    viaMarkers.forEach(m => map.removeLayer(m));
+    viaMarkers = [];
+
+    const coords = fit.geo.features[0].geometry.coordinates;
+    const latlngs = coords.map(c => [c[1], c[0]]);
+    const color = document.getElementById('surfaceGravel').checked ? '#b5651d' : '#2f7d4f';
+    routeLine = L.polyline(latlngs, { color, weight: 4, opacity: 0.85 }).addTo(map);
+    map.fitBounds(routeLine.getBounds(), { padding: [24, 24] });
+
+    fit.pts.slice(1, -1).forEach(p => {
+      const m = L.circleMarker(p, { radius: 5, color: '#555', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(map);
+      viaMarkers.push(m);
+    });
+  }
+
+  // ---------- Generate ----------
+  generateBtn.addEventListener('click', async () => {
+    warnEl.style.display = 'none';
+    resultEl.style.display = 'none';
+
+    if (!startPoint) {
+      warnEl.textContent = 'スタート地点を設定してください。';
+      warnEl.style.display = 'block';
+      return;
+    }
+    const loop = loopModeEl.checked;
+    if (!loop && !goalPoint) {
+      warnEl.textContent = 'ゴール地点を設定するか、周回コースを選択してください。';
+      warnEl.style.display = 'block';
+      return;
+    }
+    const targetKm = parseFloat(document.getElementById('distanceInput').value);
+    if (!targetKm || targetKm <= 0) {
+      warnEl.textContent = '目標距離を正しく入力してください。';
+      warnEl.style.display = 'block';
+      return;
+    }
+    const profile = document.querySelector('input[name=surface]:checked').value;
+
+    ferryWarning = false;
+    serverLimited = false;
+    segmentsFallback = '';
+    generateBtn.disabled = true;
+    setStatus('ルート計算を開始します…');
+    try {
+      let fit = null;
+      // For a gravel loop, string real forest roads together the way a rider
+      // plans one. It needs Overpass, which is a busy community service, so
+      // fall back to the geometric search rather than failing.
+      if (loop && profile === 'gravel') {
+        try {
+          fit = await fitLoopViaSegments(startPoint, targetKm);
+        } catch (err) {
+          segmentsFallback = err.message;
+          setStatus('林道データを取得できなかったため、通常の方法で計算します…');
+        }
+      }
+      if (!fit) {
+        fit = loop
+          ? await fitLoop(startPoint, targetKm, profile)
+          : await fitPointToPoint(startPoint, goalPoint, targetKm, profile);
+      }
+
+      const patterns = fit.results && fit.results.length ? fit.results : [fit];
+      renderPatterns(patterns, targetKm, profile);
+      const fKm = ferryKm(fit.geo);
+      if (fKm > 0) ferryWarning = true;
+
+      drawResult(fit);
+
+      const coords = fit.geo.features[0].geometry.coordinates;
+      const surfaceLabel = profile === 'gravel' ? 'グラベル' : 'ロード';
+      lastGpxName = `gravel-course-${surfaceLabel}-${Math.round(fit.km)}km.gpx`;
+      lastGpxText = buildGpx(coords, `${surfaceLabel}コース ${fit.km.toFixed(1)}km`);
+
+      document.getElementById('statDistance').textContent = fit.km.toFixed(1);
+      document.getElementById('statTarget').textContent = targetKm.toFixed(1);
+      document.getElementById('statAscend').textContent = ascendM(fit.geo);
+      const stats = fit.stats || routeStats(fit.geo);
+      document.getElementById('statUnpaved').textContent = stats.unpavedKm.toFixed(1);
+      const detail = [`最遠 ${stats.maxKm.toFixed(1)}km`,
+                      `同じ道の重複 ${(stats.repeat * 100).toFixed(1)}%`,
+                      `うち未舗装 ${stats.repeatUnpaved.toFixed(2)}km`];
+      if (fit.tour) detail.push(`林道 ${fit.tour.length}本`);
+      document.getElementById('statDetail').textContent = detail.join(' / ');
+      resultEl.style.display = 'block';
+
+      const warnLines = [];
+      const diffPct = Math.abs(fit.km - targetKm) / targetKm * 100;
+      if (diffPct > 8) {
+        if (fit.km > targetKm) {
+          warnLines.push(`2地点間の最短ルートがすでに ${fit.km.toFixed(1)}km あり、目標距離 ${targetKm}km より長くなっています。目標距離を増やしてください。`);
+        } else {
+          warnLines.push(`目標距離との誤差が大きめです（実距離 ${fit.km.toFixed(1)}km）。周辺の道路網の都合で近づけられませんでした。地点や距離を変えて再試行してください。`);
+        }
+      }
+      if (ferryWarning) {
+        warnLines.push(fKm > 0
+          ? `フェリー区間を回避できませんでした（フェリー ${fKm.toFixed(1)}km を含みます）。陸路だけで到達できない区間があります。`
+          : 'フェリーを回避するために一部の経路を変更しました。');
+      }
+      if (segmentsFallback) {
+        warnLines.push(`林道を選んで組み立てる方法が使えませんでした（${segmentsFallback}）。通常の方法で生成したため、未舗装路での折り返しが増えることがあります。`);
+      }
+      if (serverLimited) {
+        warnLines.push('BRouterの公開サーバーが扱える探索範囲の上限に達したため、範囲を縮小して計算しました。長距離（目安200km超）のコースでは目標距離に届かないことがあります。');
+      }
+      if (warnLines.length) {
+        warnEl.textContent = warnLines.join('\n');
+        warnEl.style.display = 'block';
+      }
+      setStatus(`完了: 実距離 ${fit.km.toFixed(1)}km / 目標 ${targetKm}km`);
+    } catch (err) {
+      console.error(err);
+      warnEl.textContent = 'コース生成に失敗しました: ' + err.message;
+      warnEl.style.display = 'block';
+      setStatus('');
+    } finally {
+      generateBtn.disabled = false;
+    }
+  });
+
+  // Several courses are offered rather than one: which line through the hills
+  // a rider wants is not something the numbers settle.
+  function renderPatterns(patterns, targetKm, profile) {
+    const box = document.getElementById('patterns');
+    box.innerHTML = '';
+    if (patterns.length < 2) return;
+    patterns.forEach((p, i) => {
+      const st = p.stats || routeStats(p.geo);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      const bits = [`${st.km.toFixed(1)}km`, `獲得${ascendM(p.geo)}m`];
+      if (profile === 'gravel') bits.push(`未舗装 ${st.unpavedKm.toFixed(1)}km (${Math.round(st.unpavedKm / st.km * 100)}%)`);
+      bits.push(`未舗装の重複 ${st.repeatUnpaved.toFixed(2)}km`);
+      if (p.tour) bits.push(`林道${p.tour.length}本`);
+      btn.innerHTML = `<span class="pname">パターン${i + 1}</span> `
+        + `<span class="pmeta">${bits.join(' / ')}</span>`;
+      btn.addEventListener('click', () => applyPattern(patterns, i, targetKm, profile));
+      box.appendChild(btn);
+    });
+    highlightPattern(0);
+  }
+
+  function highlightPattern(index) {
+    const box = document.getElementById('patterns');
+    [...box.children].forEach((el, i) => el.classList.toggle('active', i === index));
+  }
+
+  function applyPattern(patterns, index, targetKm, profile) {
+    const p = patterns[index];
+    highlightPattern(index);
+    drawResult(p);
+    const st = p.stats || routeStats(p.geo);
+    const coords = p.geo.features[0].geometry.coordinates;
+    const surfaceLabel = profile === 'gravel' ? 'グラベル' : 'ロード';
+    lastGpxName = `gravel-course-${surfaceLabel}-${Math.round(st.km)}km.gpx`;
+    lastGpxText = buildGpx(coords, `${surfaceLabel}コース ${st.km.toFixed(1)}km`);
+    document.getElementById('statDistance').textContent = st.km.toFixed(1);
+    document.getElementById('statAscend').textContent = ascendM(p.geo);
+    document.getElementById('statUnpaved').textContent = st.unpavedKm.toFixed(1);
+    const detail = [`最遠 ${st.maxKm.toFixed(1)}km`,
+                    `同じ道の重複 ${(st.repeat * 100).toFixed(1)}%`,
+                    `うち未舗装 ${st.repeatUnpaved.toFixed(2)}km`];
+    if (p.tour) detail.push(`林道 ${p.tour.length}本`);
+    document.getElementById('statDetail').textContent = detail.join(' / ');
+    setStatus(`パターン${index + 1}: 実距離 ${st.km.toFixed(1)}km / 目標 ${targetKm}km`);
+  }
+
+  document.getElementById('downloadBtn').addEventListener('click', () => {
+    if (!lastGpxText) return;
+    const blob = new Blob([lastGpxText], { type: 'application/gpx+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = lastGpxName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+})();
+</script>
+</body>
+</html>
