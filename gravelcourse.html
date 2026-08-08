@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Gravel Course Maker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --fg: #1c1c1e;
+    --muted: #7a7a80;
+    --accent: #2f7d4f;
+    --accent2: #b5651d;
+    --line: #e2e3e6;
+    --danger: #c0392b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    -webkit-text-size-adjust: 100%;
+  }
+  header {
+    text-align: center;
+    padding: 20px 16px 6px;
+  }
+  header h1 { margin: 0; font-size: 20px; letter-spacing: .5px; }
+  header p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; }
+  .layout {
+    display: flex;
+    flex-wrap: wrap-reverse;
+    gap: 16px;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 12px 16px 40px;
+  }
+  .panel { flex: 1 1 340px; min-width: 300px; }
+  .mapwrap { flex: 2 1 420px; min-width: 300px; }
+  #map {
+    width: 100%;
+    height: 420px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+  }
+  .card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    border: 1px solid var(--line);
+  }
+  .card h2 {
+    font-size: 12.5px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--muted);
+    margin: 0 0 10px;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  label:first-child { margin-top: 0; }
+  input[type=text], input[type=number] {
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 15px;
+    background: #fafafa;
+    color: var(--fg);
+  }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .searchbox { position: relative; }
+  .suggestions {
+    position: absolute;
+    z-index: 500;
+    left: 0; right: 0;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-top: 2px;
+    max-height: 180px;
+    overflow-y: auto;
+    box-shadow: 0 4px 14px rgba(0,0,0,.12);
+    display: none;
+  }
+  .suggestions div {
+    padding: 8px 10px;
+    font-size: 13.5px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--line);
+  }
+  .suggestions div:last-child { border-bottom: none; }
+  .suggestions div:hover { background: #f0f4f1; }
+  .pointinfo { font-size: 12px; color: var(--muted); margin-top: 3px; min-height: 15px; }
+  .toggles { display: flex; gap: 6px; margin-top: 8px; }
+  .toggles button {
+    flex: 1;
+    padding: 8px 4px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #fafafa;
+    font-size: 12.5px;
+    color: var(--fg);
+  }
+  .toggles button.active { background: var(--fg); color: #fff; border-color: var(--fg); }
+  .checkline { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13.5px; }
+  .surface-choice { display: flex; gap: 8px; margin-top: 4px; }
+  .surface-choice label {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 6px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--fg);
+    font-size: 13.5px;
+    margin: 0;
+    cursor: pointer;
+  }
+  .surface-choice input { width: auto; margin: 0; }
+  .surface-choice label:has(#surfaceGravel:checked) { border-color: var(--accent2); background: #fbf1e6; }
+  .surface-choice label:has(#surfaceRoad:checked) { border-color: var(--accent); background: #eef6f0; }
+  button.primary {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: var(--fg);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 14px;
+    cursor: pointer;
+  }
+  button.primary:disabled { opacity: .5; }
+  button.secondary {
+    width: 100%;
+    padding: 11px;
+    border: 1px solid var(--fg);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--fg);
+    font-size: 14px;
+    font-weight: 600;
+    margin-top: 10px;
+    cursor: pointer;
+  }
+  #status { font-size: 12.5px; color: var(--muted); margin-top: 10px; min-height: 16px; white-space: pre-line; }
+  #result { display: none; }
+  .statgrid { display: flex; gap: 10px; text-align: center; }
+  .statgrid div { flex: 1; }
+  .statgrid .num { font-size: 20px; font-weight: 700; }
+  .statgrid .label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .warn { color: var(--danger); font-size: 12.5px; margin-top: 8px; }
+  footer { text-align: center; color: var(--muted); font-size: 11px; padding: 0 16px 24px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Gravel Course Maker</h1>
+  <p>OpenStreetMap (BRouter) でグラベル/ロードコースを自動生成してGPXを書き出します</p>
+</header>
+
+<div class="layout">
+  <div class="mapwrap">
+    <div id="map"></div>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <h2>スタート地点</h2>
+      <div class="searchbox">
+        <input type="text" id="startSearch" placeholder="住所・地名で検索（例: 東京駅）">
+        <div class="suggestions" id="startSuggest"></div>
+      </div>
+      <div class="toggles">
+        <button type="button" id="pickStartBtn" class="active">地図でスタートを設定</button>
+      </div>
+      <div class="pointinfo" id="startInfo">未設定 — 検索するか地図をクリック</div>
+    </div>
+
+    <div class="card">
+      <h2>ゴール地点</h2>
+      <div class="checkline">
+        <input type="checkbox" id="loopMode" checked>
+        <label for="loopMode" style="margin:0;">周回コース（スタート＝ゴール）</label>
+      </div>
+      <div id="goalFields" style="display:none;">
+        <div class="searchbox">
+          <input type="text" id="goalSearch" placeholder="住所・地名で検索（例: 渋谷駅）">
+          <div class="suggestions" id="goalSuggest"></div>
+        </div>
+        <div class="toggles">
+          <button type="button" id="pickGoalBtn">地図でゴールを設定</button>
+        </div>
+        <div class="pointinfo" id="goalInfo">未設定 — 検索するか地図をクリック</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>コース設定</h2>
+      <label for="distanceInput">目標距離 (km)</label>
+      <input type="number" id="distanceInput" value="40" min="1" max="300" step="1">
+
+      <label>路面タイプ</label>
+      <div class="surface-choice">
+        <label><input type="radio" name="surface" id="surfaceGravel" value="gravel" checked> グラベル</label>
+        <label><input type="radio" name="surface" id="surfaceRoad" value="fastbike"> ロード</label>
+      </div>
+
+      <button type="button" class="primary" id="generateBtn">コースを生成</button>
+      <div id="status"></div>
+      <div class="warn" id="warnMsg" style="display:none;"></div>
+    </div>
+
+    <div class="card" id="result">
+      <h2>生成結果</h2>
+      <div class="statgrid">
+        <div><div class="num" id="statDistance">-</div><div class="label">実距離 km</div></div>
+        <div><div class="num" id="statTarget">-</div><div class="label">目標 km</div></div>
+        <div><div class="num" id="statAscend">-</div><div class="label">獲得標高 m</div></div>
+      </div>
+      <button type="button" class="secondary" id="downloadBtn">GPXをダウンロード</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  ルーティング: <a href="https://brouter.de/" target="_blank" rel="noopener">BRouter</a> /
+  地点検索: <a href="https://nominatim.openstreetmap.org/" target="_blank" rel="noopener">Nominatim</a> —
+  地図・道路データ &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Map setup ----------
+  const map = L.map('map').setView([35.681236, 139.767125], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  const startIcon = L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#2f7d4f;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.5);"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });
+  const goalIcon = L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#c0392b;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.5);"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });
+
+  let startPoint = null;   // {lat, lng}
+  let goalPoint = null;    // {lat, lng}
+  let startMarker = null;
+  let goalMarker = null;
+  let routeLine = null;
+  let viaMarkers = [];
+  let pickTarget = 'start'; // 'start' | 'goal'
+  let lastGpxText = '';
+  let lastGpxName = 'gravel-course.gpx';
+
+  const loopModeEl = document.getElementById('loopMode');
+  const goalFieldsEl = document.getElementById('goalFields');
+  const pickStartBtn = document.getElementById('pickStartBtn');
+  const pickGoalBtn = document.getElementById('pickGoalBtn');
+  const startInfo = document.getElementById('startInfo');
+  const goalInfo = document.getElementById('goalInfo');
+  const statusEl = document.getElementById('status');
+  const warnEl = document.getElementById('warnMsg');
+  const generateBtn = document.getElementById('generateBtn');
+  const resultEl = document.getElementById('result');
+
+  function fmtLatLng(p) {
+    return p ? `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}` : '';
+  }
+
+  function setStart(p, label) {
+    startPoint = p;
+    if (startMarker) map.removeLayer(startMarker);
+    startMarker = L.marker(p, { icon: startIcon, draggable: true }).addTo(map);
+    startMarker.on('dragend', () => { setStart(startMarker.getLatLng(), null); });
+    startInfo.textContent = (label ? label + ' — ' : '') + fmtLatLng(p);
+  }
+
+  function setGoal(p, label) {
+    goalPoint = p;
+    if (goalMarker) map.removeLayer(goalMarker);
+    goalMarker = L.marker(p, { icon: goalIcon, draggable: true }).addTo(map);
+    goalMarker.on('dragend', () => { setGoal(goalMarker.getLatLng(), null); });
+    goalInfo.textContent = (label ? label + ' — ' : '') + fmtLatLng(p);
+  }
+
+  pickStartBtn.addEventListener('click', () => {
+    pickTarget = 'start';
+    pickStartBtn.classList.add('active');
+    pickGoalBtn.classList.remove('active');
+  });
+  pickGoalBtn.addEventListener('click', () => {
+    pickTarget = 'goal';
+    pickGoalBtn.classList.add('active');
+    pickStartBtn.classList.remove('active');
+  });
+
+  map.on('click', (e) => {
+    if (pickTarget === 'goal' && !loopModeEl.checked) {
+      setGoal(e.latlng, null);
+    } else {
+      setStart(e.latlng, null);
+    }
+  });
+
+  loopModeEl.addEventListener('change', () => {
+    goalFieldsEl.style.display = loopModeEl.checked ? 'none' : '';
+    if (loopModeEl.checked) {
+      pickTarget = 'start';
+      pickStartBtn.classList.add('active');
+      pickGoalBtn.classList.remove('active');
+    }
+  });
+
+  // ---------- Nominatim search ----------
+  let searchTimers = {};
+  function wireSearch(inputId, suggestId, onPick) {
+    const input = document.getElementById(inputId);
+    const box = document.getElementById(suggestId);
+    input.addEventListener('input', () => {
+      clearTimeout(searchTimers[inputId]);
+      const q = input.value.trim();
+      if (q.length < 2) { box.style.display = 'none'; return; }
+      searchTimers[inputId] = setTimeout(async () => {
+        try {
+          const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=ja&q=${encodeURIComponent(q)}`;
+          const res = await fetch(url);
+          const items = await res.json();
+          box.innerHTML = '';
+          if (!items.length) { box.style.display = 'none'; return; }
+          items.forEach(it => {
+            const div = document.createElement('div');
+            div.textContent = it.display_name;
+            div.addEventListener('click', () => {
+              const p = { lat: parseFloat(it.lat), lng: parseFloat(it.lon) };
+              onPick(p, it.display_name);
+              map.setView(p, 15);
+              box.style.display = 'none';
+              input.value = it.display_name;
+            });
+            box.appendChild(div);
+          });
+          box.style.display = 'block';
+        } catch (err) {
+          box.style.display = 'none';
+        }
+      }, 400);
+    });
+    document.addEventListener('click', (e) => {
+      if (!box.contains(e.target) && e.target !== input) box.style.display = 'none';
+    });
+  }
+  wireSearch('startSearch', 'startSuggest', (p, name) => setStart(p, name));
+  wireSearch('goalSearch', 'goalSuggest', (p, name) => setGoal(p, name));
+
+  // ---------- Geo helpers ----------
+  function toRad(d) { return d * Math.PI / 180; }
+  function toDeg(r) { return r * 180 / Math.PI; }
+
+  function bearing(lat1, lng1, lat2, lng2) {
+    const phi1 = toRad(lat1), phi2 = toRad(lat2), dLng = toRad(lng2 - lng1);
+    const y = Math.sin(dLng) * Math.cos(phi2);
+    const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLng);
+    return (toDeg(Math.atan2(y, x)) + 360) % 360;
+  }
+
+  function destinationPoint(lat, lng, bearingDeg, distanceKm) {
+    const R = 6371;
+    const brg = toRad(bearingDeg);
+    const lat1 = toRad(lat), lng1 = toRad(lng);
+    const dR = distanceKm / R;
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(dR) + Math.cos(lat1) * Math.sin(dR) * Math.cos(brg));
+    const lng2 = lng1 + Math.atan2(
+      Math.sin(brg) * Math.sin(dR) * Math.cos(lat1),
+      Math.cos(dR) - Math.sin(lat1) * Math.sin(lat2)
+    );
+    return { lat: toDeg(lat2), lng: ((toDeg(lng2) + 540) % 360) - 180 };
+  }
+
+  // ---------- BRouter ----------
+  async function brouterRoute(points, profile) {
+    const lonlats = points.map(p => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join('|');
+    const url = `https://brouter.de/brouter?lonlats=${lonlats}&profile=${profile}&alternativeidx=0&format=geojson`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`ルート計算に失敗しました (HTTP ${res.status})`);
+    const data = await res.json();
+    if (!data.features || !data.features.length) throw new Error('ルートが見つかりませんでした');
+    return data;
+  }
+
+  function trackLengthKm(geo) {
+    const p = geo.features[0].properties;
+    return parseFloat(p['track-length']) / 1000;
+  }
+  function ascendM(geo) {
+    const p = geo.features[0].properties;
+    return Math.round(parseFloat(p['filtered ascend']));
+  }
+
+  function setStatus(msg) { statusEl.textContent = msg; }
+
+  // Fit a point-to-point route to roughly match targetKm by inserting a
+  // perpendicular detour via-point, adjusted by a secant search.
+  async function fitPointToPoint(start, goal, targetKm, profile) {
+    const midLat = (start.lat + goal.lat) / 2;
+    const midLng = (start.lng + goal.lng) / 2;
+    const brg = (bearing(start.lat, start.lng, goal.lat, goal.lng) + 90) % 360;
+
+    async function trial(offsetKm, n) {
+      const via = offsetKm > 0.05 ? destinationPoint(midLat, midLng, brg, offsetKm) : null;
+      const pts = via ? [start, via, goal] : [start, goal];
+      setStatus(`ルート計算中… (${n}回目, 迂回オフセット ${offsetKm.toFixed(1)}km)`);
+      const geo = await brouterRoute(pts, profile);
+      const km = trackLengthKm(geo);
+      return { offsetKm, pts, geo, km };
+    }
+
+    let a = await trial(0, 1);
+    if (a.km >= targetKm * 0.95) return { ...a, target: targetKm };
+
+    let bOffset = Math.max(0.5, targetKm - a.km);
+    let b = await trial(bOffset, 2);
+    let best = Math.abs(b.km - targetKm) < Math.abs(a.km - targetKm) ? b : a;
+
+    for (let i = 0; i < 5; i++) {
+      if (Math.abs(best.km - targetKm) <= targetKm * 0.05) break;
+      const denom = b.km - a.km;
+      let nextOffset = Math.abs(denom) < 1e-6
+        ? b.offsetKm * 1.5
+        : b.offsetKm + (targetKm - b.km) * (b.offsetKm - a.offsetKm) / denom;
+      nextOffset = Math.max(0, Math.min(nextOffset, targetKm * 2.5));
+      if (Math.abs(nextOffset - b.offsetKm) < 0.05) nextOffset = b.offsetKm + 0.3;
+      const c = await trial(nextOffset, i + 3);
+      if (Math.abs(c.km - targetKm) < Math.abs(best.km - targetKm)) best = c;
+      a = b; b = c;
+    }
+    return { ...best, target: targetKm };
+  }
+
+  // Fit a loop route (start === finish) by growing/shrinking an asymmetric
+  // 3-point radius around the start, adjusted by a secant search.
+  async function fitLoop(start, targetKm, profile) {
+    async function trial(rKm, n) {
+      let pts;
+      if (rKm < 0.15) {
+        pts = [start, destinationPoint(start.lat, start.lng, 90, 0.2), start];
+      } else {
+        const via1 = destinationPoint(start.lat, start.lng, 25, rKm);
+        const via2 = destinationPoint(start.lat, start.lng, 155, rKm * 1.1);
+        const via3 = destinationPoint(start.lat, start.lng, 265, rKm * 0.9);
+        pts = [start, via1, via2, via3, start];
+      }
+      setStatus(`ルート計算中… (${n}回目, 半径 ${rKm.toFixed(1)}km)`);
+      const geo = await brouterRoute(pts, profile);
+      const km = trackLengthKm(geo);
+      return { rKm, pts, geo, km };
+    }
+
+    let a = await trial(Math.max(0.3, targetKm / 6), 1);
+    let bR = a.km > 0.1 ? Math.max(0.3, (targetKm / 6) * (targetKm / a.km)) : targetKm / 4;
+    let b = await trial(bR, 2);
+    let best = Math.abs(b.km - targetKm) < Math.abs(a.km - targetKm) ? b : a;
+
+    for (let i = 0; i < 5; i++) {
+      if (Math.abs(best.km - targetKm) <= targetKm * 0.05) break;
+      const denom = b.km - a.km;
+      let nextR = Math.abs(denom) < 1e-6
+        ? b.rKm * 1.3
+        : b.rKm + (targetKm - b.km) * (b.rKm - a.rKm) / denom;
+      nextR = Math.max(0.1, Math.min(nextR, targetKm));
+      if (Math.abs(nextR - b.rKm) < 0.05) nextR = b.rKm * 1.2;
+      const c = await trial(nextR, i + 3);
+      if (Math.abs(c.km - targetKm) < Math.abs(best.km - targetKm)) best = c;
+      a = b; b = c;
+    }
+    return { ...best, target: targetKm };
+  }
+
+  // ---------- GPX ----------
+  function escapeXml(s) {
+    return String(s).replace(/[<>&'"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
+  }
+
+  function buildGpx(coords, name) {
+    const now = new Date().toISOString();
+    const trkpts = coords.map(c => {
+      const [lon, lat, ele] = c;
+      const eleTag = (ele !== undefined && ele !== null) ? `<ele>${ele}</ele>` : '';
+      return `      <trkpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}">${eleTag}</trkpt>`;
+    }).join('\n');
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Gravel Course Maker" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>${escapeXml(name)}</name>
+    <time>${now}</time>
+  </metadata>
+  <trk>
+    <name>${escapeXml(name)}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>
+`;
+  }
+
+  // ---------- Draw result ----------
+  function drawResult(fit) {
+    if (routeLine) map.removeLayer(routeLine);
+    viaMarkers.forEach(m => map.removeLayer(m));
+    viaMarkers = [];
+
+    const coords = fit.geo.features[0].geometry.coordinates;
+    const latlngs = coords.map(c => [c[1], c[0]]);
+    const color = document.getElementById('surfaceGravel').checked ? '#b5651d' : '#2f7d4f';
+    routeLine = L.polyline(latlngs, { color, weight: 4, opacity: 0.85 }).addTo(map);
+    map.fitBounds(routeLine.getBounds(), { padding: [24, 24] });
+
+    fit.pts.slice(1, -1).forEach(p => {
+      const m = L.circleMarker(p, { radius: 5, color: '#555', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(map);
+      viaMarkers.push(m);
+    });
+  }
+
+  // ---------- Generate ----------
+  generateBtn.addEventListener('click', async () => {
+    warnEl.style.display = 'none';
+    resultEl.style.display = 'none';
+
+    if (!startPoint) {
+      warnEl.textContent = 'スタート地点を設定してください。';
+      warnEl.style.display = 'block';
+      return;
+    }
+    const loop = loopModeEl.checked;
+    if (!loop && !goalPoint) {
+      warnEl.textContent = 'ゴール地点を設定するか、周回コースを選択してください。';
+      warnEl.style.display = 'block';
+      return;
+    }
+    const targetKm = parseFloat(document.getElementById('distanceInput').value);
+    if (!targetKm || targetKm <= 0) {
+      warnEl.textContent = '目標距離を正しく入力してください。';
+      warnEl.style.display = 'block';
+      return;
+    }
+    const profile = document.querySelector('input[name=surface]:checked').value;
+
+    generateBtn.disabled = true;
+    setStatus('ルート計算を開始します…');
+    try {
+      const fit = loop
+        ? await fitLoop(startPoint, targetKm, profile)
+        : await fitPointToPoint(startPoint, goalPoint, targetKm, profile);
+
+      drawResult(fit);
+
+      const coords = fit.geo.features[0].geometry.coordinates;
+      const surfaceLabel = profile === 'gravel' ? 'グラベル' : 'ロード';
+      lastGpxName = `gravel-course-${surfaceLabel}-${Math.round(fit.km)}km.gpx`;
+      lastGpxText = buildGpx(coords, `${surfaceLabel}コース ${fit.km.toFixed(1)}km`);
+
+      document.getElementById('statDistance').textContent = fit.km.toFixed(1);
+      document.getElementById('statTarget').textContent = targetKm.toFixed(1);
+      document.getElementById('statAscend').textContent = ascendM(fit.geo);
+      resultEl.style.display = 'block';
+
+      const diffPct = Math.abs(fit.km - targetKm) / targetKm * 100;
+      if (diffPct > 8) {
+        if (fit.km > targetKm) {
+          warnEl.textContent = `2地点間の最短ルートがすでに ${fit.km.toFixed(1)}km あり、目標距離 ${targetKm}km より長くなっています。目標距離を増やしてください。`;
+        } else {
+          warnEl.textContent = `目標距離との誤差が大きめです（実距離 ${fit.km.toFixed(1)}km）。周辺の道路網の都合で近づけられませんでした。地点や距離を変えて再試行してください。`;
+        }
+        warnEl.style.display = 'block';
+      }
+      setStatus(`完了: 実距離 ${fit.km.toFixed(1)}km / 目標 ${targetKm}km`);
+    } catch (err) {
+      console.error(err);
+      warnEl.textContent = 'コース生成に失敗しました: ' + err.message;
+      warnEl.style.display = 'block';
+      setStatus('');
+    } finally {
+      generateBtn.disabled = false;
+    }
+  });
+
+  document.getElementById('downloadBtn').addEventListener('click', () => {
+    if (!lastGpxText) return;
+    const blob = new Blob([lastGpxText], { type: 'application/gpx+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = lastGpxName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+})();
+</script>
+</body>
+</html>
