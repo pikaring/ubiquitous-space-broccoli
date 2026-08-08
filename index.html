@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ツール一覧 — ubiquitous-space-broccoli</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --fg: #1c1c1e;
+    --muted: #6f6f76;
+    --line: #e2e3e6;
+    --accent: #2f7d4f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a;
+      --card: #1f1f24;
+      --fg: #f2f2f4;
+      --muted: #9a9aa2;
+      --line: #33333a;
+      --accent: #6dbd8c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    line-height: 1.6;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 32px 18px 56px; }
+  header h1 { margin: 0 0 6px; font-size: 22px; letter-spacing: .3px; }
+  header p { margin: 0; color: var(--muted); font-size: 13.5px; }
+
+  h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: var(--muted);
+    margin: 34px 0 10px;
+    font-weight: 600;
+  }
+  .note { color: var(--muted); font-size: 12.5px; margin: -4px 0 12px; }
+
+  .card {
+    display: block;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    text-decoration: none;
+    color: inherit;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card .name { font-weight: 600; font-size: 15.5px; }
+  .card .file { color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .card .desc { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .card.lead { border-left: 3px solid var(--accent); }
+
+  footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>ツール一覧</h1>
+    <p>pikaring / ubiquitous-space-broccoli — GitHub Pages で公開しているページ</p>
+  </header>
+
+  <h2>ブラウザで使うツール</h2>
+
+  <a class="card lead" href="gravelcourse.html">
+    <div class="name">Gravel Course Maker</div>
+    <div class="file">gravelcourse.html</div>
+    <div class="desc">
+      スタート地点と距離を決めると、OpenStreetMap のデータからグラベル／ロードの周回コースを組み立てて GPX を書き出します。
+      グラベルは周辺の林道のうち出口のあるものだけを選んで舗装路でつなぎ、未舗装路での折り返しを避けます。
+      ロードは国道を普通に使い、自動車専用道とフェリーは通りません。候補を数パターン出すので選べます。
+    </div>
+  </a>
+
+  <h2>Pebble の設定ページ</h2>
+  <p class="note">
+    Pebble アプリの設定画面から開かれる想定のページです。単体で開くと表示はされますが、
+    保存した値の受け渡し先がないため設定は反映されません。
+  </p>
+
+  <a class="card" href="cyclehr.html">
+    <div class="name">CycleHR</div>
+    <div class="file">cyclehr.html</div>
+    <div class="desc">サイクリング用ウォッチフェイスの設定。時刻表示のフォーマットと、年齢・最大心拍数から決まる心拍ゾーン。</div>
+  </a>
+
+  <a class="card" href="timebarvisual.html">
+    <div class="name">TimeBar Visual</div>
+    <div class="file">timebarvisual.html</div>
+    <div class="desc">動作モードの切り替えと、ポモドーロの WORK／REST 時間。</div>
+  </a>
+
+  <a class="card" href="wordsquare.html">
+    <div class="name">WordClock</div>
+    <div class="file">wordsquare.html</div>
+    <div class="desc">文字盤の背景色。</div>
+  </a>
+
+  <a class="card" href="pebblis.html">
+    <div class="name">Pebblis AI</div>
+    <div class="file">pebblis.html</div>
+    <div class="desc">落ち物パズルの自動プレイ AI の重み付け。消去ライン数・低さ・平坦さの各重みと操作スピード。</div>
+  </a>
+
+  <a class="card" href="NNEWS/config.html">
+    <div class="name">NNEWS</div>
+    <div class="file">NNEWS/config.html</div>
+    <div class="desc">ニュース表示の言語設定。</div>
+  </a>
+
+  <a class="card" href="wordsquare/index.html">
+    <div class="name">WordClock（旧版の設定ページ）</div>
+    <div class="file">wordsquare/index.html</div>
+    <div class="desc">背景色のみの、以前の設定ページ。</div>
+  </a>
+
+  <footer>
+    ソースは <a href="https://github.com/pikaring/ubiquitous-space-broccoli">GitHub</a> にあります。
+    各 Pebble アプリの本体（C のソース）はリポジトリ内の同名ディレクトリです。
+  </footer>
+
+</div>
+</body>
+</html>
