@@ -1285,8 +1285,13 @@ out geom;`;
     // knob is the radius.
     const SHAPES = [
       {
+        // A ride is defined by where it goes, and how far that is sits with
+        // the rider, not with the target distance: reaching 30km on a 70km
+        // ride is a perfectly good answer to "about 100km" when the roads
+        // offer nothing closer. So several reaches are tried and offered.
         name: 'lobe', knobMin: 12, knobMax: 140,
-        seed: () => ({ radius: Math.max(0.4, targetKm / 4.5), knob: 50 }),
+        seeds: () => [6.5, 4.5, 3.3].map(divisor =>
+          ({ radius: Math.max(0.4, targetKm / divisor), knob: 50 })),
         build: (p, b) => [start,
           destinationPoint(start.lat, start.lng, b % 360, p.radius),
           destinationPoint(start.lat, start.lng, (b + p.knob) % 360, p.radius * 0.95),
@@ -1294,7 +1299,7 @@ out geom;`;
       },
       {
         name: 'ring', knobMin: 0.2, knobMax: Infinity,
-        seed: () => ({ knob: Math.max(0.4, targetKm / 11) }),
+        seeds: () => [{ knob: Math.max(0.4, targetKm / 11) }],
         build: (p, b) => {
           const w = [1.0, 1.1, 0.9, 1.05, 0.95, 1.08];
           const pts = [start];
@@ -1323,16 +1328,28 @@ out geom;`;
         //
         // Road adds total repetition, how far it strays onto unpaved (the
         // router will take an unsealed shortcut and come straight back down
-        // it), and how far the course actually gets from the start. That last
-        // one is what stops a road course from being a blob drawn around the
-        // rider's own house: a ride has somewhere it goes. The published
-        // courses this was checked against all run about 4.5 times their
-        // farthest point -- 4.4 and 5.0 for the two Hakodate brevets -- so
-        // that is the shape being asked for.
+        // it), and a penalty for not getting far enough from the start -- what
+        // stops a road course from being a blob drawn around the rider's own
+        // house. The published courses run about 4.5 times their farthest
+        // point (4.4 and 5.0 for the two Hakodate brevets), so that is the
+        // reach a target distance implies.
+        //
+        // The penalty is one-sided on purpose. Going further out than that is
+        // not a fault: reaching 30km on a 70km ride is a fine answer to "about
+        // 100km" when the roads offer nothing closer, and courses that do get
+        // out there should be free to appear alongside the others.
+        //
+        // But "go further out" must not become "go straight out and straight
+        // back". A little repetition is unavoidable and harmless on tarmac --
+        // the real Hakodate 200 repeats 10.7% of itself just getting out of
+        // town and back in. Past roughly that point it stops being the way
+        // home and starts being the ride, so repetition beyond 15% is charged
+        // several times over.
         cost: profile === 'gravel'
           ? stats.repeatUnpaved / Math.max(stats.km, 1)
-          : stats.repeat + stats.unpavedKm / Math.max(stats.km, 1)
-            + Math.abs(Math.log(Math.max(stats.maxKm, 0.1) / (targetKm / 4.5))) * 0.8,
+          : stats.repeat + Math.max(0, stats.repeat - 0.15) * 3
+            + stats.unpavedKm / Math.max(stats.km, 1)
+            + Math.max(0, Math.log((targetKm / 4.5) / Math.max(stats.maxKm, 0.1))) * 0.8,
         maxKm: stats.maxKm,
       };
     }
@@ -1341,16 +1358,19 @@ out geom;`;
     const candidates = [];
     const ferryOnly = [];
     for (const shape of SHAPES) {
-      for (const bearing of BEARINGS) {
-        setStatus(`経路の候補を探索中… (${shape.name === 'lobe' ? '往復型' : '周回型'}, 方位 ${bearing}°)`);
-        let res;
-        try {
-          res = await attempt(shape, shape.seed(), bearing);
-        } catch (err) {
-          continue; // unroutable from here: usually open water
+      for (const seed of shape.seeds()) {
+        for (const bearing of BEARINGS) {
+          const reach = seed.radius ? `, 目安 ${seed.radius.toFixed(0)}km先` : '';
+          setStatus(`経路の候補を探索中… (${shape.name === 'lobe' ? '往復型' : '周回型'}, 方位 ${bearing}°${reach})`);
+          let res;
+          try {
+            res = await attempt(shape, seed, bearing);
+          } catch (err) {
+            continue; // unroutable from here: usually open water
+          }
+          if (res.ferry > 0) { ferryOnly.push(res); continue; }
+          candidates.push(res);
         }
-        if (res.ferry > 0) { ferryOnly.push(res); continue; }
-        candidates.push(res);
       }
     }
     if (!candidates.length && !ferryOnly.length) {
@@ -1368,7 +1388,7 @@ out geom;`;
     // out not to predict the fitted result, so more than one is carried
     // through and the decision made afterwards.
     const fitted = [];
-    for (const cand of pool.slice(0, 3)) {
+    for (const cand of pool.slice(0, 5)) {
       const shape = cand.shape;
       const label = shape.name === 'lobe' ? '往復型' : '周回型';
       const unit = shape.name === 'lobe' ? '°' : 'km';
@@ -1412,18 +1432,35 @@ out geom;`;
     }
 
     // Prefer a ferry-free result even if a ferry-bound one fits the distance
-    // better; among equals, trade repeated road against distance error.
+    // better. Distance is deliberately weak here: an exact 100km does not
+    // exist on real roads, and a course that reaches somewhere worth reaching
+    // is the better answer even when it comes up short.
     const clean = fitted.filter(f => f.ferry === 0);
     const finalPool = clean.length ? clean : fitted;
-    const finalScore = f => f.cost + Math.abs(f.km - targetKm) / targetKm * 1.2;
+    const finalScore = f => f.cost + Math.abs(f.km - targetKm) / targetKm * 0.5;
     finalPool.sort((x, y) => finalScore(x) - finalScore(y));
-    // Offer the runners-up too: they are different shapes or bearings, so they
-    // are genuinely different rides, and the numbers do not settle which one a
-    // rider wants.
-    const results = finalPool.slice(0, 3).map(f => ({
-      ...f, err: (f.km - targetKm) / targetKm,
-      unpavedRepeatShare: f.stats.repeatUnpaved / Math.max(f.stats.km, 1),
-    }));
+
+    // Offer courses that differ as rides, not three takes on one. Two are the
+    // same offer only when they go about as far out AND are about as long --
+    // a 63km loop and a 102km loop that both turn back around 23km are
+    // different days out, and both are worth showing.
+    //
+    // Variety stops at the point it would cost quality: a course that repeats
+    // three quarters of itself is not worth listing just because it reaches
+    // somewhere new, so the list ends rather than pads.
+    const pack = f => ({ ...f, err: (f.km - targetKm) / targetKm,
+                         unpavedRepeatShare: f.stats.repeatUnpaved / Math.max(f.stats.km, 1) });
+    const near = (a, b) => Math.abs(Math.log(Math.max(a, 0.1) / Math.max(b, 0.1))) < 0.22;
+    const qualityFloor = finalPool[0].cost + 0.5;
+    const results = [];
+    for (const f of finalPool) {
+      if (results.length >= 3) break;
+      if (results.length && f.cost > qualityFloor) break;
+      const duplicate = results.some(o =>
+        near(f.stats.maxKm, o.stats.maxKm) && near(f.stats.km, o.stats.km));
+      if (duplicate) continue;
+      results.push(pack(f));
+    }
     return { ...results[0], target: targetKm, results };
   }
 
@@ -1618,7 +1655,7 @@ ${trkpts}
       const st = p.stats || routeStats(p.geo);
       const btn = document.createElement('button');
       btn.type = 'button';
-      const bits = [`${st.km.toFixed(1)}km`, `獲得${ascendM(p.geo)}m`];
+      const bits = [`${st.km.toFixed(1)}km`, `最遠 ${st.maxKm.toFixed(1)}km`, `獲得${ascendM(p.geo)}m`];
       if (surface === 'gravel') bits.push(`未舗装 ${st.unpavedKm.toFixed(1)}km (${Math.round(st.unpavedKm / st.km * 100)}%)`);
       bits.push(`未舗装の重複 ${st.repeatUnpaved.toFixed(2)}km`);
       if (p.tour) bits.push(`林道${p.tour.length}本`);
