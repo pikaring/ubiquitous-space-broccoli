@@ -215,7 +215,7 @@
         <label><input type="radio" name="surface" id="surfaceGravel" value="gravel" checked> グラベル</label>
         <label><input type="radio" name="surface" id="surfaceRoad" value="fastbike"> ロード</label>
       </div>
-      <div class="pointinfo">フェリーを含む経路は自動で除外し、同じ道の往復も抑えます。グラベルは舗装路より未舗装の細い道を優先します。200km超は公開サーバーの制限で目標に届かない場合があります。</div>
+      <div class="pointinfo">複数の形・方位を試し、同じ道の往復が少ないものを選びます。フェリーを含む経路は除外。グラベルは舗装路より未舗装の細い道を優先します。200km超は公開サーバーの制限で目標に届かない場合があります。</div>
 
       <button type="button" class="primary" id="generateBtn">コースを生成</button>
       <div id="status"></div>
@@ -390,6 +390,15 @@
     return { lat: toDeg(lat2), lng: ((toDeg(lng2) + 540) % 360) - 180 };
   }
 
+  // Metres between two [lon, lat] pairs (GeoJSON order, as BRouter returns).
+  function haversineM(a, b) {
+    const R = 6371000;
+    const phi1 = toRad(a[1]), phi2 = toRad(b[1]);
+    const dPhi = toRad(b[1] - a[1]), dLng = toRad(b[0] - a[0]);
+    const h = Math.sin(dPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
   // ---------- BRouter ----------
   // Ferries are kept out two ways: the fastbike profile understands
   // allow_ferries, so we switch it off there; the gravel profile has no such
@@ -429,6 +438,41 @@
       if (/\broute=ferry\b/.test(messages[i][tagsIdx] || '')) m += parseInt(messages[i][distIdx], 10) || 0;
     }
     return m / 1000;
+  }
+
+  // How much of a route is ridden twice, and how far it gets from the start.
+  // Both come from the geometry alone, so ranking candidate loops on them
+  // costs no extra requests. Points are binned to a ~45m grid; a bin holding
+  // two points more than 3km apart *along the route* means that stretch of
+  // road is being used a second time, rather than merely being adjacent.
+  function shapeStats(coords) {
+    const cum = [0];
+    for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + haversineM(coords[i - 1], coords[i]));
+    const total = cum[cum.length - 1];
+    if (!(total > 0)) return { repeat: 0, maxKm: 0 };
+
+    const grid = new Map();
+    for (let i = 0; i < coords.length; i++) {
+      const key = `${Math.round(coords[i][1] / 0.0004)},${Math.round(coords[i][0] / 0.0004)}`;
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(i);
+    }
+    const revisited = new Set();
+    for (const idxs of grid.values()) {
+      if (idxs.length < 2) continue;
+      for (let a = 0; a < idxs.length; a++) {
+        for (let b = a + 1; b < idxs.length; b++) {
+          if (Math.abs(cum[idxs[b]] - cum[idxs[a]]) > 3000) { revisited.add(idxs[a]); revisited.add(idxs[b]); }
+        }
+      }
+    }
+    let dup = 0;
+    for (let i = 1; i < coords.length; i++) {
+      if (revisited.has(i) && revisited.has(i - 1)) dup += haversineM(coords[i - 1], coords[i]);
+    }
+    let maxM = 0;
+    for (const c of coords) maxM = Math.max(maxM, haversineM(coords[0], c));
+    return { repeat: dup / total, maxKm: maxM / 1000 };
   }
 
   function trackLengthKm(geo) {
@@ -534,93 +578,127 @@
   // Fit a loop route (start === finish) by growing/shrinking an asymmetric
   // 3-point radius around the start, adjusted by a secant search.
   async function fitLoop(start, targetKm, profile) {
-    // Loop orientation matters near coastlines: a via-point dropped out to sea
-    // (or onto another island) is either unroutable or only reachable by
-    // ferry. Rotating the whole ring is what makes a start like Hakodate work,
-    // so each radius is tried at several orientations until one comes back
-    // ferry-free. The winning orientation is remembered and tried first next
-    // time, which keeps the usual inland case at a single request.
-    const ROTATIONS = [0, 45, 90, 180, 270];
-    let rotation = null; // committed once found; see trial()
+    // Two loop shapes, because neither wins everywhere. The six-point ring
+    // stays compact, which suits dense networks and very long targets. The
+    // two-point "lobe" runs out along one corridor and back along a
+    // neighbouring one, which is what a rider actually does on a sparse rural
+    // network. Checked against a recorded 34.7km gravel ride near Assabu
+    // (2.0% of it ridden twice, reaching 11.1km from the start): the ring
+    // alone produced 20.9% / 2.2km, choosing between the two gives
+    // 0.6% / 6.3km. `factor` is roughly how many radii of road each shape
+    // yields, used only to seed the search.
+    const SHAPES = [
+      {
+        name: 'lobe', factor: 4.0,
+        build: (r, b) => [start,
+          destinationPoint(start.lat, start.lng, b % 360, r),
+          destinationPoint(start.lat, start.lng, (b + 50) % 360, r * 0.95),
+          start],
+      },
+      {
+        name: 'ring', factor: 11.0,
+        build: (r, b) => {
+          const w = [1.0, 1.1, 0.9, 1.05, 0.95, 1.08];
+          const pts = [start];
+          for (let i = 0; i < w.length; i++) {
+            pts.push(destinationPoint(start.lat, start.lng, (b + 25 + i * 60) % 360, r * w[i]));
+          }
+          pts.push(start);
+          return pts;
+        },
+      },
+    ];
+    // Bearing matters near coastlines (a via-point dropped at sea is
+    // unroutable) and on sparse networks (it decides which corridor the loop
+    // uses), so several are tried.
+    const BEARINGS = [0, 90, 180, 270];
 
-    // Six via points around the ring rather than three. With only three, the
-    // router reaches a waypoint and comes straight back down the same road;
-    // the extra waypoints hold the loop open. Measured over Tokyo 20/60/100km
-    // and Hakodate 400km, repeated road dropped from 14/20/1/57% to 3/1/1/28%.
-    // The radii wobble slightly so the ring isn't a mechanical circle.
-    const RING = [1.0, 1.1, 0.9, 1.05, 0.95, 1.08];
-
-    async function attempt(rKm, rot) {
-      let pts;
-      if (rKm < 0.15) {
-        pts = [start, destinationPoint(start.lat, start.lng, (90 + rot) % 360, 0.2), start];
-      } else {
-        pts = [start];
-        for (let i = 0; i < RING.length; i++) {
-          const brg = (25 + rot + i * 360 / RING.length) % 360;
-          pts.push(destinationPoint(start.lat, start.lng, brg, rKm * RING[i]));
-        }
-        pts.push(start);
-      }
+    async function attempt(shape, rKm, bearing) {
+      const pts = rKm < 0.15
+        ? [start, destinationPoint(start.lat, start.lng, bearing, 0.2), start]
+        : shape.build(rKm, bearing);
       const geo = await brouterRouteRaw(pts, profile, false);
-      return { rKm, rot, pts, geo, km: trackLengthKm(geo) };
+      const stats = shapeStats(geo.features[0].geometry.coordinates);
+      return { shape, bearing, rKm, pts, geo, km: trackLengthKm(geo),
+               ferry: ferryKm(geo), repeat: stats.repeat, maxKm: stats.maxKm };
     }
 
-    async function trial(rKm, n) {
-      // Once an orientation is committed, only the radius varies. Distance
-      // differs a lot between orientations, so letting it change mid-search
-      // would feed the secant search two unrelated curves and wreck it; a
-      // radius the committed orientation can't route is instead handled by
-      // makeSafeTrial, which shrinks it.
-      if (rotation !== null) {
-        setStatus(`ルート計算中… (${n}回目, 半径 ${rKm.toFixed(1)}km)`);
-        return await attempt(rKm, rotation);
-      }
-      let ferryFallback = null;
-      let lastError = null;
-      for (const rot of ROTATIONS) {
-        setStatus(`ルート計算中… (${n}回目, 半径 ${rKm.toFixed(1)}km, 方位 ${rot}°)`);
+    // Pass 1: one probe per shape and bearing, to see which corridors exist.
+    const candidates = [];
+    const ferryOnly = [];
+    for (const shape of SHAPES) {
+      const seed = Math.max(0.4, targetKm / shape.factor);
+      for (const bearing of BEARINGS) {
+        setStatus(`経路の候補を探索中… (${shape.name === 'lobe' ? '往復型' : '周回型'}, 方位 ${bearing}°)`);
         let res;
         try {
-          res = await attempt(rKm, rot);
+          res = await attempt(shape, seed, bearing);
         } catch (err) {
-          lastError = err; // this orientation is unroutable (usually water)
-          continue;
+          continue; // unroutable from here: usually open water
         }
-        if (ferryKm(res.geo) === 0) { rotation = rot; return res; }
-        if (!ferryFallback) ferryFallback = res;
+        if (res.ferry > 0) { ferryOnly.push(res); continue; }
+        candidates.push(res);
       }
-      if (ferryFallback) { rotation = ferryFallback.rot; return ferryFallback; }
-      throw lastError || new Error('ルートが見つかりませんでした');
+    }
+    if (!candidates.length && !ferryOnly.length) {
+      throw new Error('ルートを計算できませんでした。地点を道路の近くに設定してください。');
+    }
+    const pool = candidates.length ? candidates : ferryOnly;
+
+    // Rank on what we can see so far: least repeated road, with a penalty for
+    // being far off the target distance (log ratio, since the radius still
+    // has to be fitted and distance scales with it).
+    const seedScore = c => c.repeat + Math.abs(Math.log(c.km / targetKm)) * 0.35;
+    pool.sort((x, y) => seedScore(x) - seedScore(y));
+
+    // Pass 2: fit the radius of the leading candidates. Seed-radius repetition
+    // turned out not to predict the fitted result, so more than one candidate
+    // is carried through and the decision is made afterwards.
+    const fitted = [];
+    for (const cand of pool.slice(0, 3)) {
+      const label = cand.shape.name === 'lobe' ? '往復型' : '周回型';
+      const trial = async (rKm, n) => {
+        setStatus(`距離を合わせています… (${label} 方位 ${cand.bearing}°, ${n}回目, 半径 ${rKm.toFixed(1)}km)`);
+        return await attempt(cand.shape, rKm, cand.bearing);
+      };
+      const safeTrial = makeSafeTrial(trial, 0.2);
+
+      let a = await safeTrial(cand.rKm, 1);
+      if (!a) continue;
+      let b = await safeTrial(Math.max(0.3, a.rKm * (targetKm / Math.max(a.km, 0.1))), 2);
+      let best = a;
+      if (b) {
+        if (Math.abs(b.km - targetKm) < Math.abs(a.km - targetKm)) best = b;
+        for (let i = 0; i < 4; i++) {
+          if (Math.abs(best.km - targetKm) <= targetKm * 0.05) break;
+          const denom = b.km - a.km;
+          let nextR = Math.abs(denom) < 1e-6
+            ? b.rKm * 1.3
+            : b.rKm + (targetKm - b.km) * (b.rKm - a.rKm) / denom;
+          nextR = Math.max(0.1, Math.min(nextR, targetKm));
+          if (Math.abs(nextR - b.rKm) < 0.05) nextR = b.rKm * 1.2;
+          const c = await safeTrial(nextR, i + 3);
+          if (!c) break;
+          // safeTrial clamps to the largest radius the server will accept;
+          // once it stops moving there is nothing new to learn.
+          if (Math.abs(c.rKm - b.rKm) < 0.05) break;
+          if (Math.abs(c.km - targetKm) < Math.abs(best.km - targetKm)) best = c;
+          a = b; b = c;
+        }
+      }
+      fitted.push(best);
+    }
+    if (!fitted.length) {
+      throw new Error('ルートを計算できませんでした。地点を道路の近くに設定してください。');
     }
 
-    const safeTrial = makeSafeTrial(trial, 0.2);
-
-    // A six-point ring measures roughly 10-12x its radius on real roads.
-    let a = await safeTrial(Math.max(0.3, targetKm / 10), 1);
-    if (!a) throw new Error('ルートを計算できませんでした。地点を道路の近くに設定してください。');
-    let bR = a.km > 0.1 ? Math.max(0.3, a.rKm * (targetKm / a.km)) : targetKm / 4;
-    let b = await safeTrial(bR, 2);
-    if (!b) return { ...a, target: targetKm };
-    let best = Math.abs(b.km - targetKm) < Math.abs(a.km - targetKm) ? b : a;
-
-    for (let i = 0; i < 5; i++) {
-      if (Math.abs(best.km - targetKm) <= targetKm * 0.05) break;
-      const denom = b.km - a.km;
-      let nextR = Math.abs(denom) < 1e-6
-        ? b.rKm * 1.3
-        : b.rKm + (targetKm - b.km) * (b.rKm - a.rKm) / denom;
-      nextR = Math.max(0.1, Math.min(nextR, targetKm));
-      if (Math.abs(nextR - b.rKm) < 0.05) nextR = b.rKm * 1.2;
-      const c = await safeTrial(nextR, i + 3);
-      if (!c) break;
-      // safeTrial clamps to the largest radius the server will accept; once
-      // it stops moving, further iterations just re-evaluate the same route.
-      if (Math.abs(c.rKm - b.rKm) < 0.05) break;
-      if (Math.abs(c.km - targetKm) < Math.abs(best.km - targetKm)) best = c;
-      a = b; b = c;
-    }
-    return { ...best, target: targetKm };
+    // Prefer a ferry-free result even if a ferry-bound one fits the distance
+    // better; among equals, trade repeated road against distance error.
+    const clean = fitted.filter(f => f.ferry === 0);
+    const finalPool = clean.length ? clean : fitted;
+    const finalScore = f => f.repeat + Math.abs(f.km - targetKm) / targetKm * 1.2;
+    finalPool.sort((x, y) => finalScore(x) - finalScore(y));
+    return { ...finalPool[0], target: targetKm };
   }
 
   // ---------- GPX ----------
