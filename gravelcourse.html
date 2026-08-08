@@ -230,7 +230,7 @@
         <label><input type="radio" name="surface" id="surfaceGravel" value="gravel" checked> グラベル</label>
         <label><input type="radio" name="surface" id="surfaceRoad" value="moped"> ロード</label>
       </div>
-      <div class="pointinfo">グラベルの周回は、周辺の林道から出口のあるものだけを選び、舗装路でつないで距離を合わせます。未舗装路での折り返し（すれ違いが危険）を最優先で避けるため、距離は目安です。ロードは国道を普通に使い、自動車専用道は通りません。どちらも候補を複数出すので選べます。フェリーを含む経路は除外。200km超は公開サーバーの制限で目標に届かない場合があります。</div>
+      <div class="pointinfo">グラベルの周回は、周辺の林道から出口のあるものだけを選び、舗装路でつないで距離を合わせます。未舗装路での折り返し（すれ違いが危険）を最優先で避けるため、距離は目安です。ロードは目的地まで出て別の道で戻る形を優先し（自宅の周りを回る形になりません）、国道を普通に使い自動車専用道は通りません。どちらも候補を複数出すので選べます。フェリーを含む経路は除外。200km超は公開サーバーの制限で目標に届かない場合があります。</div>
 
       <button type="button" class="primary" id="generateBtn">コースを生成</button>
       <div id="status"></div>
@@ -1320,12 +1320,19 @@ out geom;`;
         ferry: ferryKm(geo), stats,
         // Gravel is judged on repetition over the unpaved parts alone --
         // repeating sealed road is normal, you are on the other side of it.
-        // Road is judged on total repetition plus how far it strays onto
-        // unpaved, because the router will take an unsealed shortcut and come
-        // straight back down it, which is not a road course.
+        //
+        // Road adds total repetition, how far it strays onto unpaved (the
+        // router will take an unsealed shortcut and come straight back down
+        // it), and how far the course actually gets from the start. That last
+        // one is what stops a road course from being a blob drawn around the
+        // rider's own house: a ride has somewhere it goes. The published
+        // courses this was checked against all run about 4.5 times their
+        // farthest point -- 4.4 and 5.0 for the two Hakodate brevets -- so
+        // that is the shape being asked for.
         cost: profile === 'gravel'
           ? stats.repeatUnpaved / Math.max(stats.km, 1)
-          : stats.repeat + stats.unpavedKm / Math.max(stats.km, 1),
+          : stats.repeat + stats.unpavedKm / Math.max(stats.km, 1)
+            + Math.abs(Math.log(Math.max(stats.maxKm, 0.1) / (targetKm / 4.5))) * 0.8,
         maxKm: stats.maxKm,
       };
     }
