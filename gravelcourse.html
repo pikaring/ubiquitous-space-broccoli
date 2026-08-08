@@ -208,14 +208,14 @@
     <div class="card">
       <h2>コース設定</h2>
       <label for="distanceInput">目標距離 (km)</label>
-      <input type="number" id="distanceInput" value="40" min="1" max="300" step="1">
+      <input type="number" id="distanceInput" value="40" min="1" max="600" step="1">
 
       <label>路面タイプ</label>
       <div class="surface-choice">
         <label><input type="radio" name="surface" id="surfaceGravel" value="gravel" checked> グラベル</label>
         <label><input type="radio" name="surface" id="surfaceRoad" value="fastbike"> ロード</label>
       </div>
-      <div class="pointinfo">フェリーは自動で回避し、往復での同じ道の折り返しも抑制します。グラベルは舗装路より未舗装の細い道を優先します。</div>
+      <div class="pointinfo">フェリーを含む経路は自動で除外し、同じ道の往復も抑えます。グラベルは舗装路より未舗装の細い道を優先します。200km超は公開サーバーの制限で目標に届かない場合があります。</div>
 
       <button type="button" class="primary" id="generateBtn">コースを生成</button>
       <div id="status"></div>
@@ -391,16 +391,16 @@
   }
 
   // ---------- BRouter ----------
-  // Ferry ways found mid-route get fenced off with a nogo circle and the
-  // route is recomputed, so ferries only ever appear when truly unavoidable.
-  let ferryNogos = [];
+  // Ferries are kept out two ways: the fastbike profile understands
+  // allow_ferries, so we switch it off there; the gravel profile has no such
+  // parameter, so any route that still contains a ferry is rejected by the
+  // caller and retried with a different loop orientation. Fencing ferries off
+  // with nogo circles was tried and abandoned -- when the far shore is another
+  // island (e.g. Hokkaido -> Honshu) it makes the waypoint unreachable and the
+  // search explodes until the public server kills it.
   let ferryWarning = false;
 
-  function nogosQuery() {
-    return ferryNogos.map(p => `${p.lon.toFixed(6)},${p.lat.toFixed(6)},300`).join('|');
-  }
-
-  async function brouterRouteRaw(points, profile) {
+  async function brouterRouteRaw(points, profile, allowFerries) {
     const lonlats = points.map(p => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join('|');
     // profile:correctMisplacedViaPoints trims out-and-back stubs created by
     // detour via-points; profile:prefer_unpaved_paths biases the gravel
@@ -408,8 +408,7 @@
     let url = `https://brouter.de/brouter?lonlats=${lonlats}&profile=${profile}&alternativeidx=0&format=geojson`
       + `&profile:correctMisplacedViaPoints=1&profile:correctMisplacedViaPointsDistance=600`;
     if (profile === 'gravel') url += '&profile:prefer_unpaved_paths=1';
-    const ng = nogosQuery();
-    if (ng) url += `&nogos=${encodeURIComponent(ng)}`;
+    else if (!allowFerries) url += '&profile:allow_ferries=0';
     const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
     if (!res.ok) throw new Error(`ルート計算に失敗しました (HTTP ${res.status})`);
     const data = await res.json();
@@ -417,45 +416,19 @@
     return data;
   }
 
-  // BRouter's geojson "messages" table has one row per graph edge with a
-  // WayTags column (e.g. "route=ferry ..."); scan it for ferry crossings.
-  function findFerryPoints(geo) {
-    const props = geo.features[0].properties;
-    const messages = props.messages;
-    if (!messages || messages.length < 2) return [];
+  // BRouter's geojson "messages" table has one row per graph edge, with a
+  // WayTags column (e.g. "route=ferry ...") and the edge length in metres.
+  function ferryKm(geo) {
+    const messages = geo.features[0].properties.messages;
+    if (!messages || messages.length < 2) return 0;
     const header = messages[0];
-    const lonIdx = header.indexOf('Longitude');
-    const latIdx = header.indexOf('Latitude');
     const tagsIdx = header.indexOf('WayTags');
-    const pts = [];
+    const distIdx = header.indexOf('Distance');
+    let m = 0;
     for (let i = 1; i < messages.length; i++) {
-      const tags = messages[i][tagsIdx] || '';
-      if (/\broute=ferry\b/.test(tags)) {
-        pts.push({ lon: parseInt(messages[i][lonIdx], 10) / 1e6, lat: parseInt(messages[i][latIdx], 10) / 1e6 });
-      }
+      if (/\broute=ferry\b/.test(messages[i][tagsIdx] || '')) m += parseInt(messages[i][distIdx], 10) || 0;
     }
-    return pts;
-  }
-
-  async function brouterRoute(points, profile) {
-    let lastGeo = null;
-    for (let attempt = 0; attempt < 4; attempt++) {
-      let geo;
-      try {
-        geo = await brouterRouteRaw(points, profile);
-      } catch (err) {
-        // A nogo detour can be too expensive for the routing server to
-        // recompute; fall back to the last route we did get rather than fail.
-        if (lastGeo) { ferryWarning = true; return lastGeo; }
-        throw err;
-      }
-      lastGeo = geo;
-      const ferryPts = findFerryPoints(geo);
-      if (!ferryPts.length) return geo;
-      if (attempt === 3 || ferryNogos.length > 40) { ferryWarning = true; return geo; }
-      ferryPts.forEach(p => ferryNogos.push(p));
-    }
-    return lastGeo;
+    return m / 1000;
   }
 
   function trackLengthKm(geo) {
@@ -469,6 +442,36 @@
 
   function setStatus(msg) { statusEl.textContent = msg; }
 
+  // The public BRouter instance aborts searches it considers too expensive
+  // ("killed by thread-priority-watchdog"), which large loops hit easily.
+  // Treat a failed trial as "this parameter is too big": remember it as an
+  // upper bound and shrink, so one over-ambitious guess can't kill the whole
+  // run when a smaller radius would have produced a perfectly good course.
+  let serverLimited = false;
+
+  // minValue is the smallest meaningful parameter: a loop radius must stay
+  // positive, but a point-to-point detour offset of 0 is the valid "no via
+  // point, go direct" case and must not be shrunk away.
+  function makeSafeTrial(trial, minValue) {
+    let upperBound = Infinity; // smallest parameter value known to fail
+    return async function safeTrial(x, n) {
+      let v = Math.min(x, upperBound * 0.9);
+      for (let k = 0; k < 6; k++) {
+        if (v < minValue) return null;
+        try {
+          return await trial(v, n);
+        } catch (err) {
+          serverLimited = true;
+          upperBound = Math.min(upperBound, v);
+          if (v <= minValue) return null; // cannot shrink any further
+          v = Math.max(minValue, v * 0.8);
+          setStatus(`範囲が広すぎたため縮小して再試行中… (${v.toFixed(1)}km)`);
+        }
+      }
+      return null;
+    };
+  }
+
   // Fit a point-to-point route to roughly match targetKm by inserting a
   // perpendicular detour via-point, adjusted by a secant search.
   async function fitPointToPoint(start, goal, targetKm, profile) {
@@ -476,20 +479,37 @@
     const midLng = (start.lng + goal.lng) / 2;
     const brg = (bearing(start.lat, start.lng, goal.lat, goal.lng) + 90) % 360;
 
+    // Unlike a loop, both ends are fixed here, so there is no orientation to
+    // rotate: if the ferry-free attempt finds nothing, the crossing may simply
+    // have no land alternative (island to mainland). Fall back to allowing
+    // ferries rather than refusing to produce a route at all.
+    let allowFerries = false;
+
     async function trial(offsetKm, n) {
       const via = offsetKm > 0.05 ? destinationPoint(midLat, midLng, brg, offsetKm) : null;
       const pts = via ? [start, via, goal] : [start, goal];
       setStatus(`ルート計算中… (${n}回目, 迂回オフセット ${offsetKm.toFixed(1)}km)`);
-      const geo = await brouterRoute(pts, profile);
-      const km = trackLengthKm(geo);
-      return { offsetKm, pts, geo, km };
+      let geo;
+      try {
+        geo = await brouterRouteRaw(pts, profile, allowFerries);
+      } catch (err) {
+        if (allowFerries) throw err;
+        allowFerries = true;
+        setStatus('陸路が見つからないため、フェリーを許可して再計算中…');
+        geo = await brouterRouteRaw(pts, profile, true);
+      }
+      return { offsetKm, pts, geo, km: trackLengthKm(geo) };
     }
 
-    let a = await trial(0, 1);
+    const safeTrial = makeSafeTrial(trial, 0);
+
+    let a = await safeTrial(0, 1);
+    if (!a) throw new Error('ルートを計算できませんでした。地点を道路の近くに設定してください。');
     if (a.km >= targetKm * 0.95) return { ...a, target: targetKm };
 
     let bOffset = Math.max(0.5, targetKm - a.km);
-    let b = await trial(bOffset, 2);
+    let b = await safeTrial(bOffset, 2);
+    if (!b) return { ...a, target: targetKm };
     let best = Math.abs(b.km - targetKm) < Math.abs(a.km - targetKm) ? b : a;
 
     for (let i = 0; i < 5; i++) {
@@ -500,7 +520,11 @@
         : b.offsetKm + (targetKm - b.km) * (b.offsetKm - a.offsetKm) / denom;
       nextOffset = Math.max(0, Math.min(nextOffset, targetKm * 2.5));
       if (Math.abs(nextOffset - b.offsetKm) < 0.05) nextOffset = b.offsetKm + 0.3;
-      const c = await trial(nextOffset, i + 3);
+      const c = await safeTrial(nextOffset, i + 3);
+      if (!c) break;
+      // safeTrial clamps to the largest offset the server will accept; once
+      // it stops moving, further iterations just re-evaluate the same route.
+      if (Math.abs(c.offsetKm - b.offsetKm) < 0.05) break;
       if (Math.abs(c.km - targetKm) < Math.abs(best.km - targetKm)) best = c;
       a = b; b = c;
     }
@@ -510,25 +534,74 @@
   // Fit a loop route (start === finish) by growing/shrinking an asymmetric
   // 3-point radius around the start, adjusted by a secant search.
   async function fitLoop(start, targetKm, profile) {
-    async function trial(rKm, n) {
+    // Loop orientation matters near coastlines: a via-point dropped out to sea
+    // (or onto another island) is either unroutable or only reachable by
+    // ferry. Rotating the whole ring is what makes a start like Hakodate work,
+    // so each radius is tried at several orientations until one comes back
+    // ferry-free. The winning orientation is remembered and tried first next
+    // time, which keeps the usual inland case at a single request.
+    const ROTATIONS = [0, 45, 90, 180, 270];
+    let rotation = null; // committed once found; see trial()
+
+    // Six via points around the ring rather than three. With only three, the
+    // router reaches a waypoint and comes straight back down the same road;
+    // the extra waypoints hold the loop open. Measured over Tokyo 20/60/100km
+    // and Hakodate 400km, repeated road dropped from 14/20/1/57% to 3/1/1/28%.
+    // The radii wobble slightly so the ring isn't a mechanical circle.
+    const RING = [1.0, 1.1, 0.9, 1.05, 0.95, 1.08];
+
+    async function attempt(rKm, rot) {
       let pts;
       if (rKm < 0.15) {
-        pts = [start, destinationPoint(start.lat, start.lng, 90, 0.2), start];
+        pts = [start, destinationPoint(start.lat, start.lng, (90 + rot) % 360, 0.2), start];
       } else {
-        const via1 = destinationPoint(start.lat, start.lng, 25, rKm);
-        const via2 = destinationPoint(start.lat, start.lng, 155, rKm * 1.1);
-        const via3 = destinationPoint(start.lat, start.lng, 265, rKm * 0.9);
-        pts = [start, via1, via2, via3, start];
+        pts = [start];
+        for (let i = 0; i < RING.length; i++) {
+          const brg = (25 + rot + i * 360 / RING.length) % 360;
+          pts.push(destinationPoint(start.lat, start.lng, brg, rKm * RING[i]));
+        }
+        pts.push(start);
       }
-      setStatus(`ルート計算中… (${n}回目, 半径 ${rKm.toFixed(1)}km)`);
-      const geo = await brouterRoute(pts, profile);
-      const km = trackLengthKm(geo);
-      return { rKm, pts, geo, km };
+      const geo = await brouterRouteRaw(pts, profile, false);
+      return { rKm, rot, pts, geo, km: trackLengthKm(geo) };
     }
 
-    let a = await trial(Math.max(0.3, targetKm / 6), 1);
-    let bR = a.km > 0.1 ? Math.max(0.3, (targetKm / 6) * (targetKm / a.km)) : targetKm / 4;
-    let b = await trial(bR, 2);
+    async function trial(rKm, n) {
+      // Once an orientation is committed, only the radius varies. Distance
+      // differs a lot between orientations, so letting it change mid-search
+      // would feed the secant search two unrelated curves and wreck it; a
+      // radius the committed orientation can't route is instead handled by
+      // makeSafeTrial, which shrinks it.
+      if (rotation !== null) {
+        setStatus(`ルート計算中… (${n}回目, 半径 ${rKm.toFixed(1)}km)`);
+        return await attempt(rKm, rotation);
+      }
+      let ferryFallback = null;
+      let lastError = null;
+      for (const rot of ROTATIONS) {
+        setStatus(`ルート計算中… (${n}回目, 半径 ${rKm.toFixed(1)}km, 方位 ${rot}°)`);
+        let res;
+        try {
+          res = await attempt(rKm, rot);
+        } catch (err) {
+          lastError = err; // this orientation is unroutable (usually water)
+          continue;
+        }
+        if (ferryKm(res.geo) === 0) { rotation = rot; return res; }
+        if (!ferryFallback) ferryFallback = res;
+      }
+      if (ferryFallback) { rotation = ferryFallback.rot; return ferryFallback; }
+      throw lastError || new Error('ルートが見つかりませんでした');
+    }
+
+    const safeTrial = makeSafeTrial(trial, 0.2);
+
+    // A six-point ring measures roughly 10-12x its radius on real roads.
+    let a = await safeTrial(Math.max(0.3, targetKm / 10), 1);
+    if (!a) throw new Error('ルートを計算できませんでした。地点を道路の近くに設定してください。');
+    let bR = a.km > 0.1 ? Math.max(0.3, a.rKm * (targetKm / a.km)) : targetKm / 4;
+    let b = await safeTrial(bR, 2);
+    if (!b) return { ...a, target: targetKm };
     let best = Math.abs(b.km - targetKm) < Math.abs(a.km - targetKm) ? b : a;
 
     for (let i = 0; i < 5; i++) {
@@ -539,7 +612,11 @@
         : b.rKm + (targetKm - b.km) * (b.rKm - a.rKm) / denom;
       nextR = Math.max(0.1, Math.min(nextR, targetKm));
       if (Math.abs(nextR - b.rKm) < 0.05) nextR = b.rKm * 1.2;
-      const c = await trial(nextR, i + 3);
+      const c = await safeTrial(nextR, i + 3);
+      if (!c) break;
+      // safeTrial clamps to the largest radius the server will accept; once
+      // it stops moving, further iterations just re-evaluate the same route.
+      if (Math.abs(c.rKm - b.rKm) < 0.05) break;
       if (Math.abs(c.km - targetKm) < Math.abs(best.km - targetKm)) best = c;
       a = b; b = c;
     }
@@ -616,14 +693,17 @@ ${trkpts}
     }
     const profile = document.querySelector('input[name=surface]:checked').value;
 
-    ferryNogos = [];
     ferryWarning = false;
+    serverLimited = false;
     generateBtn.disabled = true;
     setStatus('ルート計算を開始します…');
     try {
       const fit = loop
         ? await fitLoop(startPoint, targetKm, profile)
         : await fitPointToPoint(startPoint, goalPoint, targetKm, profile);
+
+      const fKm = ferryKm(fit.geo);
+      if (fKm > 0) ferryWarning = true;
 
       drawResult(fit);
 
@@ -647,7 +727,12 @@ ${trkpts}
         }
       }
       if (ferryWarning) {
-        warnLines.push('フェリー区間を完全には回避できませんでした（陸路の迂回が非常に長くなるか、迂回路が見つかりませんでした）。');
+        warnLines.push(fKm > 0
+          ? `フェリー区間を回避できませんでした（フェリー ${fKm.toFixed(1)}km を含みます）。陸路だけで到達できない区間があります。`
+          : 'フェリーを回避するために一部の経路を変更しました。');
+      }
+      if (serverLimited) {
+        warnLines.push('BRouterの公開サーバーが扱える探索範囲の上限に達したため、範囲を縮小して計算しました。長距離（目安200km超）のコースでは目標距離に届かないことがあります。');
       }
       if (warnLines.length) {
         warnEl.textContent = warnLines.join('\n');
