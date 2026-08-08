@@ -444,11 +444,16 @@
 
   // Surface of a routed edge, from the tags BRouter reports for it.
   const UNPAVED_SURFACE = /surface=(gravel|fine_gravel|compacted|unpaved|dirt|ground|earth|sand|mud)/;
+  const PAVED_SURFACE = /surface=(asphalt|concrete|paved|paving_stones|sett|metal|wood)/;
   function edgeIsUnpaved(tags) {
     if (UNPAVED_SURFACE.test(tags)) return true;
+    if (PAVED_SURFACE.test(tags)) return false;
     if (/tracktype=grade1\b/.test(tags)) return false;
     if (/tracktype=grade[2-5]/.test(tags)) return true;
-    return /highway=track/.test(tags);   // an untagged forest road
+    // An untagged track, path or bridleway is not a sealed road. Counting
+    // paths here matters: doubling back along one is the same hazard as
+    // doubling back along a forest road, and it used to go unmeasured.
+    return /highway=(track|path|bridleway)/.test(tags);
   }
 
   // Repeated road, split by surface, plus how far the loop gets from the start.
@@ -812,30 +817,38 @@ out geom;`;
   // Fit a loop route (start === finish) by growing/shrinking an asymmetric
   // 3-point radius around the start, adjusted by a secant search.
   async function fitLoop(start, targetKm, profile) {
-    // Two loop shapes, because neither wins everywhere. The six-point ring
-    // stays compact, which suits dense networks and very long targets. The
-    // two-point "lobe" runs out along one corridor and back along a
-    // neighbouring one, which is what a rider actually does on a sparse rural
-    // network. Checked against a recorded 34.7km gravel ride near Assabu
-    // (2.0% of it ridden twice, reaching 11.1km from the start): the ring
-    // alone produced 20.9% / 2.2km, choosing between the two gives
-    // 0.6% / 6.3km. `factor` is roughly how many radii of road each shape
-    // yields, used only to seed the search.
+    // Two loop shapes, because neither wins everywhere, and each is fitted on
+    // a different knob.
+    //
+    // The "lobe" is how a brevet is drawn: fix the farthest point, then widen
+    // the loop left and right until the distance comes out. So its knob is the
+    // angle between the two via points, and the radius stays put. Fitting it
+    // on the radius instead was actively harmful -- an Aomori 300km candidate
+    // sat at 242km with 0.5% repeated road, and pushing the radius out to
+    // reach 300km drove the far point into dead ends and took it to 82%.
+    // Widening the same candidate instead walks 197 -> 242 -> 289 -> 342km
+    // with repetition staying under 1%.
+    //
+    // The six-point "ring" stays compact and suits dense networks and very
+    // long targets, where there is no single corridor to run out along. Its
+    // knob is the radius.
     const SHAPES = [
       {
-        name: 'lobe', factor: 4.5,
-        build: (r, b) => [start,
-          destinationPoint(start.lat, start.lng, b % 360, r),
-          destinationPoint(start.lat, start.lng, (b + 50) % 360, r * 0.95),
+        name: 'lobe', knobMin: 12, knobMax: 140,
+        seed: () => ({ radius: Math.max(0.4, targetKm / 4.5), knob: 50 }),
+        build: (p, b) => [start,
+          destinationPoint(start.lat, start.lng, b % 360, p.radius),
+          destinationPoint(start.lat, start.lng, (b + p.knob) % 360, p.radius * 0.95),
           start],
       },
       {
-        name: 'ring', factor: 11.0,
-        build: (r, b) => {
+        name: 'ring', knobMin: 0.2, knobMax: Infinity,
+        seed: () => ({ knob: Math.max(0.4, targetKm / 11) }),
+        build: (p, b) => {
           const w = [1.0, 1.1, 0.9, 1.05, 0.95, 1.08];
           const pts = [start];
           for (let i = 0; i < w.length; i++) {
-            pts.push(destinationPoint(start.lat, start.lng, (b + 25 + i * 60) % 360, r * w[i]));
+            pts.push(destinationPoint(start.lat, start.lng, (b + 25 + i * 60) % 360, p.knob * w[i]));
           }
           pts.push(start);
           return pts;
@@ -847,30 +860,34 @@ out geom;`;
     // uses), so several are tried.
     const BEARINGS = [0, 90, 180, 270];
 
-    async function attempt(shape, rKm, bearing) {
-      const pts = rKm < 0.15
-        ? [start, destinationPoint(start.lat, start.lng, bearing, 0.2), start]
-        : shape.build(rKm, bearing);
+    async function attempt(shape, params, bearing) {
+      const pts = shape.build(params, bearing);
       const geo = await brouterRouteRaw(pts, profile, false);
       const stats = routeStats(geo);
-      return { shape, bearing, rKm, pts, geo, km: trackLengthKm(geo),
-               ferry: ferryKm(geo), stats,
-               // gravel is judged on repetition over the unpaved parts only;
-               // repeating sealed road is normal and does not count against it
-               cost: profile === 'gravel' ? stats.repeatUnpaved / Math.max(stats.km, 1) : stats.repeat,
-               maxKm: stats.maxKm };
+      return {
+        shape, bearing, params, pts, geo, km: trackLengthKm(geo),
+        ferry: ferryKm(geo), stats,
+        // Gravel is judged on repetition over the unpaved parts alone --
+        // repeating sealed road is normal, you are on the other side of it.
+        // Road is judged on total repetition plus how far it strays onto
+        // unpaved, because the router will take an unsealed shortcut and come
+        // straight back down it, which is not a road course.
+        cost: profile === 'gravel'
+          ? stats.repeatUnpaved / Math.max(stats.km, 1)
+          : stats.repeat + stats.unpavedKm / Math.max(stats.km, 1),
+        maxKm: stats.maxKm,
+      };
     }
 
     // Pass 1: one probe per shape and bearing, to see which corridors exist.
     const candidates = [];
     const ferryOnly = [];
     for (const shape of SHAPES) {
-      const seed = Math.max(0.4, targetKm / shape.factor);
       for (const bearing of BEARINGS) {
         setStatus(`経路の候補を探索中… (${shape.name === 'lobe' ? '往復型' : '周回型'}, 方位 ${bearing}°)`);
         let res;
         try {
-          res = await attempt(shape, seed, bearing);
+          res = await attempt(shape, shape.seed(), bearing);
         } catch (err) {
           continue; // unroutable from here: usually open water
         }
@@ -884,47 +901,48 @@ out geom;`;
     const pool = candidates.length ? candidates : ferryOnly;
 
     // Rank on what we can see so far: least repeated road, with a penalty for
-    // being far off the target distance (log ratio, since the radius still
-    // has to be fitted and distance scales with it).
+    // being far off the target distance (log ratio, since the knob still has
+    // to be fitted and distance grows with it).
     const seedScore = c => c.cost + Math.abs(Math.log(c.km / targetKm)) * 0.35;
     pool.sort((x, y) => seedScore(x) - seedScore(y));
 
-    // Pass 2: fit the radius of the leading candidates. Seed-radius repetition
-    // turned out not to predict the fitted result, so more than one candidate
-    // is carried through and the decision is made afterwards.
+    // Pass 2: fit the knob of the leading candidates. Seed repetition turned
+    // out not to predict the fitted result, so more than one is carried
+    // through and the decision made afterwards.
     const fitted = [];
     for (const cand of pool.slice(0, 3)) {
-      const label = cand.shape.name === 'lobe' ? '往復型' : '周回型';
-      const trial = async (rKm, n) => {
-        setStatus(`距離を合わせています… (${label} 方位 ${cand.bearing}°, ${n}回目, 半径 ${rKm.toFixed(1)}km)`);
-        return await attempt(cand.shape, rKm, cand.bearing);
+      const shape = cand.shape;
+      const label = shape.name === 'lobe' ? '往復型' : '周回型';
+      const unit = shape.name === 'lobe' ? '°' : 'km';
+      const trial = async (knob, n) => {
+        setStatus(`距離を合わせています… (${label} 方位 ${cand.bearing}°, ${n}回目, ${knob.toFixed(1)}${unit})`);
+        return await attempt(shape, { ...cand.params, knob }, cand.bearing);
       };
-      const safeTrial = makeSafeTrial(trial, 0.2);
+      const safeTrial = makeSafeTrial(trial, shape.knobMin);
 
-      let a = await safeTrial(cand.rKm, 1);
+      const clampKnob = k => Math.max(shape.knobMin, Math.min(k, shape.knobMax));
+      let a = await safeTrial(cand.params.knob, 1);
       if (!a) continue;
-      let b = await safeTrial(Math.max(0.3, a.rKm * (targetKm / Math.max(a.km, 0.1))), 2);
+      let b = await safeTrial(clampKnob(a.params.knob * (targetKm / Math.max(a.km, 0.1))), 2);
       let best = a;
       if (b) {
         if (Math.abs(b.km - targetKm) < Math.abs(a.km - targetKm)) best = b;
         for (let i = 0; i < 4; i++) {
           if (Math.abs(best.km - targetKm) <= targetKm * 0.05) break;
           const denom = b.km - a.km;
-          let nextR = Math.abs(denom) < 1e-6
-            ? b.rKm * 1.3
-            : b.rKm + (targetKm - b.km) * (b.rKm - a.rKm) / denom;
-          // Distance is not monotonic in the radius -- near a coast one radius
+          let next = Math.abs(denom) < 1e-6
+            ? b.params.knob * 1.3
+            : b.params.knob + (targetKm - b.km) * (b.params.knob - a.params.knob) / denom;
+          // Distance is not monotonic in the knob -- near a coast one value
           // routes around a bay and the next does not -- so an undamped secant
-          // step can fling the radius to nonsense. Keep each step within half
-          // to double the current one.
-          nextR = Math.max(b.rKm * 0.5, Math.min(nextR, b.rKm * 2));
-          nextR = Math.max(0.1, Math.min(nextR, targetKm));
-          if (Math.abs(nextR - b.rKm) < 0.05) nextR = b.rKm * 1.2;
-          const c = await safeTrial(nextR, i + 3);
+          // step can fling it to nonsense. Keep each step within half to double.
+          next = clampKnob(Math.max(b.params.knob * 0.5, Math.min(next, b.params.knob * 2)));
+          if (Math.abs(next - b.params.knob) < 0.05) next = clampKnob(b.params.knob * 1.2);
+          const c = await safeTrial(next, i + 3);
           if (!c) break;
-          // safeTrial clamps to the largest radius the server will accept;
-          // once it stops moving there is nothing new to learn.
-          if (Math.abs(c.rKm - b.rKm) < 0.05) break;
+          // safeTrial clamps to the largest value the server will accept; once
+          // it stops moving there is nothing new to learn.
+          if (Math.abs(c.params.knob - b.params.knob) < 0.05) break;
           if (Math.abs(c.km - targetKm) < Math.abs(best.km - targetKm)) best = c;
           a = b; b = c;
         }
