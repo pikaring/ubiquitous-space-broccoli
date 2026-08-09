@@ -440,10 +440,19 @@
   let ferryWarning = false;
   let roadProfileWarning = '';
 
-  // BRouter's stock `moped` profile with one line changed: ferries cost 10000
-  // instead of 5.67, i.e. blocked. Everything else is upstream's -- trunk at
-  // 1.5 and primary at 1.2 so 国道 is ridable, motorroad=yes and motorways at
-  // 10000 so 自動車専用道 is not.
+  // BRouter's stock `moped` profile with two changes: ferries cost 10000
+  // instead of 5.67, i.e. blocked, and an explicit bicycle=no blocks the way
+  // outright. Everything else is upstream's -- trunk at 1.5 and primary at 1.2
+  // so 国道 is ridable, motorroad=yes and motorways at 10000 so 自動車専用道
+  // is not.
+  //
+  // The bicycle=no rule is not a walking-back of riding on 国道. Ignoring
+  // OSM's *default* assumption that a trunk road is unridable is the whole
+  // point of using a motor profile here; ignoring a tag someone deliberately
+  // put on one way is a different thing, and it is how レインボーブリッジ got
+  // into a Tokyo course. Its road deck is highway=tertiary with bicycle=no
+  // and no motorroad tag, so nothing else in this profile stops it -- the
+  // only way across for a rider is to push the bike along the promenade.
   //
   // It has to be embedded rather than fetched and patched: brouter.de serves
   // the profile files without an Access-Control-Allow-Origin header, so a
@@ -514,10 +523,14 @@ assign motorcycleaccess
               motorverhicleaccess
               or motorcycle=yes or motorcycle=designated motorcycle=destination
 
+assign bikebanned or bicycle=no or bicycle=dismount bicycle=private
+
 assign accesspenalty
-       switch or caraccess motorcycleaccess
-              switch motorroad=yes 10000 0
+       switch bikebanned
               10000
+              switch or caraccess motorcycleaccess
+                     switch motorroad=yes 10000 0
+                     10000
 
 assign onewaypenalty
        switch switch reversedirection=yes
