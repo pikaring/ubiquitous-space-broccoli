@@ -1,0 +1,17 @@
+{
+  "name": "avatartalk-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "iOS の 3D アバターアプリと Claude をつなぐ SSE ブリッジ",
+  "main": "src/server.mjs",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.0",
+    "@anthropic-ai/sdk": "^0.120.0"
+  }
+}

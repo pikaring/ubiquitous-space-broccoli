@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>ja_JP</string>
+	<key>CFBundleDisplayName</key>
+	<string>AvatarTalk</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
+
+	<!-- マイクと音声認識。この 2 つがないと起動直後に落ちる。 -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>アバターに話しかけるためにマイクを使います。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>話しかけた内容を文字にするために音声認識を使います。</string>
+
+	<!-- 同じ Wi-Fi にいる母艦のブリッジにつなぐため。 -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>同じ Wi-Fi 上で動かしているブリッジに接続します。</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- ローカルネットワーク相手の http:// だけを許可する。
+		     外部のサーバーに http で出ることはできないままにしてある。 -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>
