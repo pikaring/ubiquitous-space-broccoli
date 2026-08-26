@@ -1,0 +1,2461 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meta Destiny System — 超統合運命解析術</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --fg: #1c1c1e; --muted: #6f6f76; --line: #e2e3e6;
+    --accent: #5b4b9e; --accent2: #b5651d; --good: #2f7d4f; --bad: #b03a3a; --soft: #f0eef8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a; --card: #1f1f24; --fg: #f2f2f4; --muted: #9a9aa2; --line: #33333a;
+      --accent: #a396e0; --accent2: #d99a5b; --good: #6dbd8c; --bad: #e08585; --soft: #26242f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg); line-height: 1.65;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 26px 16px 60px; }
+  header h1 { margin: 0 0 4px; font-size: 21px; letter-spacing: .4px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .card > h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .card > h3 { font-size: 14px; margin: 16px 0 6px; }
+  .card > h3:first-child { margin-top: 0; }
+
+  .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  input, select, button, textarea {
+    font: inherit; font-size: 14px; width: 100%; padding: 7px 9px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg);
+  }
+  input[type=checkbox] { width: auto; margin-right: 6px; vertical-align: -2px; }
+  .chk { font-size: 13px; color: var(--fg); }
+  button.go {
+    background: var(--accent); color: #fff; border: none; font-weight: 600;
+    padding: 11px; border-radius: 10px; cursor: pointer; margin-top: 12px;
+  }
+  button.go:hover { filter: brightness(1.08); }
+  button.mini { width: auto; padding: 5px 11px; font-size: 12.5px; cursor: pointer; }
+  details { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--accent); font-weight: 600; }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 12px; }
+  .tabs button {
+    width: auto; padding: 6px 12px; font-size: 13px; border-radius: 999px; cursor: pointer;
+    background: var(--card); border: 1px solid var(--line); color: var(--muted);
+  }
+  .tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 11.5px; white-space: nowrap; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+
+  .bar { background: var(--soft); border-radius: 4px; height: 9px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--accent); }
+  .kv { font-size: 13px; margin: 3px 0; }
+  .kv b { font-weight: 600; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+         background: var(--soft); color: var(--accent); margin-right: 4px; white-space: nowrap; }
+  .tag.bad { color: var(--bad); } .tag.good { color: var(--good); }
+  .lead { font-size: 15px; line-height: 1.8; }
+  .pos { color: var(--good); } .neg { color: var(--bad); }
+
+  .pillars { display: grid; grid-template-columns: 70px repeat(4, 1fr); gap: 0; font-size: 13px; }
+  .pillars div { padding: 6px 6px; border-bottom: 1px solid var(--line); }
+  .pillars div.h { color: var(--muted); font-size: 11.5px; }
+  .pillars div.gz { font-size: 19px; font-weight: 600; letter-spacing: 2px; }
+
+  .zw { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .zw .cell { border: 1px solid var(--line); border-radius: 8px; padding: 6px; min-height: 92px; font-size: 11.5px; background: var(--card); }
+  .zw .cell.ming { border-color: var(--accent); background: var(--soft); }
+  .zw .cell .br { float: right; color: var(--muted); font-size: 11px; }
+  .zw .cell .pn { font-weight: 600; font-size: 12px; }
+  .zw .cell .mj { color: var(--accent); font-weight: 600; }
+  .zw .mid { grid-column: 2 / 4; grid-row: 2 / 4; border: 1px solid var(--line); border-radius: 8px; padding: 8px; font-size: 12px; }
+
+  .body9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; text-align: center; }
+  .body9 .c { border: 1px solid var(--line); border-radius: 8px; padding: 8px 4px; font-size: 12px; }
+  .body9 .c.main { border-color: var(--accent); background: var(--soft); }
+  .body9 .c .s { font-size: 14px; font-weight: 600; display: block; }
+  .body9 .c .l { color: var(--muted); font-size: 10.5px; }
+  .body9 .c.blank { border: none; }
+
+  svg { display: block; max-width: 100%; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  footer { margin-top: 34px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+  footer a { color: var(--muted); }
+  .warn { border-left: 3px solid var(--accent2); padding-left: 10px; font-size: 12.5px; color: var(--muted); margin: 10px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Meta Destiny System</h1>
+  <p>四柱推命・算命学・紫微斗数・西洋占星術・インド占星術・数秘術・九星気学・宿曜・タロットを、
+     ひとつの共通軸に写像して統合する運命解析エンジン。計算はすべてこのページの中で完結します。</p>
+</header>
+
+<div class="card">
+  <h2>出生情報</h2>
+  <div class="grid">
+    <div><label>生年</label><input id="y" type="number" value="1990" min="1800" max="2100"></div>
+    <div><label>月</label><input id="mo" type="number" value="7" min="1" max="12"></div>
+    <div><label>日</label><input id="d" type="number" value="15" min="1" max="31"></div>
+    <div><label>時</label><input id="hh" type="number" value="14" min="0" max="23"></div>
+    <div><label>分</label><input id="mi" type="number" value="30" min="0" max="59"></div>
+    <div><label>性別（大運・大限の方向に使用）</label>
+      <select id="sex"><option value="male">男性</option><option value="female">女性</option></select></div>
+  </div>
+  <div class="grid" style="margin-top:10px">
+    <div><label>出生地</label><select id="place"></select></div>
+    <div><label>緯度</label><input id="lat" type="number" step="0.01" value="35.69"></div>
+    <div><label>経度（東経が正）</label><input id="lon" type="number" step="0.01" value="139.69"></div>
+    <div><label>UTCオフセット（時）</label><input id="tz" type="number" step="0.5" value="9"></div>
+    <div><label>血液型（任意）</label>
+      <select id="blood"><option value="">指定しない</option><option>A</option><option>B</option><option>O</option><option>AB</option></select></div>
+    <div><label>名前（ローマ字・任意／数秘に使用）</label><input id="name" type="text" placeholder="Taro Yamada"></div>
+  </div>
+  <div style="margin-top:10px">
+    <span class="chk"><input id="nohour" type="checkbox"><label style="display:inline" for="nohour">出生時刻がわからない</label></span>
+  </div>
+  <details>
+    <summary>計算オプション</summary>
+    <div style="margin-top:8px">
+      <div class="chk"><input id="tst" type="checkbox" checked>真太陽時で時柱を出す（経度差＋均時差を補正）</div>
+      <div class="chk"><input id="late" type="checkbox" checked>23時以降を翌日の日干支として扱う（夜子刻）</div>
+      <div style="margin-top:8px;max-width:260px"><label>ハウスシステム</label>
+        <select id="house"><option value="placidus">プラシーダス</option><option value="whole">ホールサイン</option><option value="equal">イコール</option></select></div>
+      <p class="note">UTCオフセットは<b>出生当時に実際に使われていた値</b>を入れてください（サマータイム含む)。
+        日本は 1948〜1951 年の夏季にサマータイム（+10）が施行されていました。</p>
+    </div>
+  </details>
+  <button class="go" id="run">解析する</button>
+</div>
+
+<div id="out"></div>
+
+<footer>
+  <p><b>免責</b>：占術は科学的に検証された予測手法ではありません。ここで行っているのは、
+     各流派の<b>算法（暦計算と記号の割り当て）を忠実に実装し、その出力を機械的に統合する</b>ことであって、
+     結果が当たることの保証ではありません。医療・法律・投資など重要な判断の材料にはしないでください。</p>
+  <p>暦・天文計算は Jean Meeus "Astronomical Algorithms"、VSOP87、JPL 近似軌道要素に基づく実装です。
+     ソースは <a href="https://github.com/pikaring/ubiquitous-space-broccoli">GitHub</a>。</p>
+</footer>
+
+</div>
+<script>
+/* ============================================================================
+ * Meta Destiny System — 統合運命解析エンジン
+ * §1 天文計算 (astronomy)
+ *
+ * 出典アルゴリズム:
+ *   - Jean Meeus, "Astronomical Algorithms" 2nd ed. (章番号を各所に付記)
+ *   - VSOP87D (地球の黄経、Meeus 付録III の短縮版)
+ *   - JPL "Approximate Positions of the Major Planets" (Standish, 1800-2050)
+ * 精度は太陽 ~2秒角、月 ~30秒角、惑星 ~1分角。占術の用途には十分。
+ * ==========================================================================*/
+var MDS = (function () {
+'use strict';
+
+var D2R = Math.PI / 180, R2D = 180 / Math.PI;
+function mod(a, n) { return ((a % n) + n) % n; }
+function deg(x) { return mod(x, 360); }
+function sin(d) { return Math.sin(d * D2R); }
+function cos(d) { return Math.cos(d * D2R); }
+function tan(d) { return Math.tan(d * D2R); }
+function asin(x) { return Math.asin(Math.max(-1, Math.min(1, x))) * R2D; }
+function atan2(y, x) { return Math.atan2(y, x) * R2D; }
+function round(x, n) { var p = Math.pow(10, n || 0); return Math.round(x * p) / p; }
+
+/* --- ユリウス日 ------------------------------------------------------------*/
+function toJD(y, m, d) {              // d は小数日を含んでよい (グレゴリオ暦)
+  if (m <= 2) { y -= 1; m += 12; }
+  var a = Math.floor(y / 100), b = 2 - a + Math.floor(a / 4);
+  if (y < 1582 || (y === 1582 && (m < 10 || (m === 10 && d < 15)))) b = 0;  // ユリウス暦
+  return Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + d + b - 1524.5;
+}
+function fromJD(jd) {                 // → {y,m,d,hour,min,sec}
+  var z = Math.floor(jd + 0.5), f = jd + 0.5 - z, a = z;
+  if (z >= 2299161) { var al = Math.floor((z - 1867216.25) / 36524.25); a = z + 1 + al - Math.floor(al / 4); }
+  var b = a + 1524, c = Math.floor((b - 122.1) / 365.25), dd = Math.floor(365.25 * c),
+      e = Math.floor((b - dd) / 30.6001), day = b - dd - Math.floor(30.6001 * e) + f,
+      m = e < 14 ? e - 1 : e - 13, y = m > 2 ? c - 4716 : c - 4715;
+  var di = Math.floor(day), fr = (day - di) * 24;
+  var hh = Math.floor(fr); fr = (fr - hh) * 60;
+  var mi = Math.floor(fr); var ss = Math.round((fr - mi) * 60);
+  if (ss >= 60) { ss -= 60; mi++; } if (mi >= 60) { mi -= 60; hh++; }
+  return { y: y, m: m, d: di, hour: hh, min: mi, sec: ss };
+}
+/* 現地時刻(UTCオフセット tz 時間) → UT のユリウス日 */
+function localToJD(y, m, d, hour, minute, tz) {
+  return toJD(y, m, d + (hour + minute / 60 - tz) / 24);
+}
+
+/* --- ΔT (TT - UT), Espenak & Meeus の多項式 -------------------------------*/
+function deltaT(y) {
+  var u, t;
+  if (y < 1600) { u = (y - 1000) / 100; return 1574.2 - 556.01 * u + 71.23472 * u * u + 0.319781 * u * u * u; }
+  if (y < 1700) { t = y - 1600; return 120 - 0.9808 * t - 0.01532 * t * t + t * t * t / 7129; }
+  if (y < 1800) { t = y - 1700; return 8.83 + 0.1603 * t - 0.0059285 * t * t + 0.00013336 * t * t * t - t * t * t * t / 1174000; }
+  if (y < 1860) { t = y - 1800; return 13.72 - 0.332447 * t + 0.0068612 * t * t + 0.0041116 * t * t * t - 0.00037436 * Math.pow(t, 4) + 0.0000121272 * Math.pow(t, 5) - 0.0000001699 * Math.pow(t, 6) + 0.000000000875 * Math.pow(t, 7); }
+  if (y < 1900) { t = y - 1860; return 7.62 + 0.5737 * t - 0.251754 * t * t + 0.01680668 * t * t * t - 0.0004473624 * Math.pow(t, 4) + t * t * t * t * t / 233174; }
+  if (y < 1920) { t = y - 1900; return -2.79 + 1.494119 * t - 0.0598939 * t * t + 0.0061966 * t * t * t - 0.000197 * Math.pow(t, 4); }
+  if (y < 1941) { t = y - 1920; return 21.20 + 0.84493 * t - 0.076100 * t * t + 0.0020936 * t * t * t; }
+  if (y < 1961) { t = y - 1950; return 29.07 + 0.407 * t - t * t / 233 + t * t * t / 2547; }
+  if (y < 1986) { t = y - 1975; return 45.45 + 1.067 * t - t * t / 260 - t * t * t / 718; }
+  if (y < 2005) { t = y - 2000; return 63.86 + 0.3345 * t - 0.060374 * t * t + 0.0017275 * t * t * t + 0.000651814 * Math.pow(t, 4) + 0.00002373599 * Math.pow(t, 5); }
+  if (y < 2050) { t = y - 2000; return 62.92 + 0.32217 * t + 0.005589 * t * t; }
+  if (y < 2150) { return -20 + 32 * Math.pow((y - 1820) / 100, 2) - 0.5628 * (2150 - y); }
+  u = (y - 1820) / 100; return -20 + 32 * u * u;
+}
+function jdUT2TT(jd) { var y = fromJD(jd).y; return jd + deltaT(y) / 86400; }
+
+/* --- 黄道傾斜角・章動 (Meeus 22) ------------------------------------------*/
+function obliquity(jde) {
+  var T = (jde - 2451545) / 36525, U = T / 100;
+  var e = 23.43929111 - U * (4680.93 + U * (-1.55 + U * (1999.25 + U * (-51.38 + U * (-249.67 +
+      U * (-39.05 + U * (7.12 + U * (27.87 + U * (5.79 + U * 2.45)))))))))/ 3600;
+  return e + nutation(jde).deps;
+}
+function nutation(jde) {                 // 主要項のみ
+  var T = (jde - 2451545) / 36525;
+  var om = 125.04452 - 1934.136261 * T;
+  var L  = 280.4665 + 36000.7698 * T;
+  var Lp = 218.3165 + 481267.8813 * T;
+  var dpsi = (-17.20 * sin(om) - 1.32 * sin(2 * L) - 0.23 * sin(2 * Lp) + 0.21 * sin(2 * om)) / 3600;
+  var deps = (  9.20 * cos(om) + 0.57 * cos(2 * L) + 0.10 * cos(2 * Lp) - 0.09 * cos(2 * om)) / 3600;
+  return { dpsi: dpsi, deps: deps, omega: om };
+}
+
+/* --- 太陽の視黄経 (VSOP87D 地球 L 系列の短縮版) ---------------------------*/
+var EARTH_L = [
+ [[175347046,0,0],[3341656,4.6692568,6283.07585],[34894,4.6261,12566.1517],[3497,2.7441,5753.3849],
+  [3418,2.8289,3.5231],[3136,3.6277,77713.7715],[2676,4.4181,7860.4194],[2343,6.1352,3930.2097],
+  [1324,0.7425,11506.7698],[1273,2.0371,529.691],[1199,1.1096,1577.3435],[990,5.233,5884.927],
+  [902,2.045,26.298],[857,3.508,398.149],[780,1.179,5223.694],[753,2.533,5507.553],[505,4.583,18849.228],
+  [492,4.205,775.523],[357,2.92,0.067],[317,5.849,11790.629],[284,1.899,796.298],[271,0.315,10977.079],
+  [243,0.345,5486.778],[206,4.806,2544.314],[205,1.869,5573.143],[202,2.458,6069.777],[156,0.833,213.299],
+  [132,3.411,2942.463],[126,1.083,20.775],[115,0.645,0.98],[103,0.636,4694.003],[102,0.976,15720.839],
+  [102,4.267,7.114],[99,6.21,2146.17],[98,0.68,155.42],[86,5.98,161000.69],[85,1.3,6275.96],
+  [85,3.67,71430.7],[80,1.81,17260.15],[79,3.04,12036.46],[75,1.76,5088.63],[74,3.5,3154.69],
+  [74,4.68,801.82],[70,0.83,9437.76],[62,3.98,8827.39],[61,1.82,7084.9],[57,2.78,6286.6],
+  [56,4.39,14143.5],[56,3.47,6279.55],[52,0.19,12139.55],[52,1.33,1748.02],[51,0.28,5856.48],
+  [49,0.49,1194.45],[41,5.37,8429.24],[41,2.4,19651.05],[39,6.17,10447.39],[37,6.04,10213.29],
+  [37,2.57,1059.38],[36,1.71,2352.87],[36,1.78,6812.77],[33,0.59,17789.85],[30,0.44,83996.85],
+  [30,2.74,1349.87],[25,3.16,4690.48]],
+ [[628331966747,0,0],[206059,2.678235,6283.07585],[4303,2.6351,12566.1517],[425,1.59,3.523],
+  [119,5.796,26.298],[109,2.966,1577.344],[93,2.59,18849.23],[72,1.14,529.69],[68,1.87,398.15],
+  [67,4.41,5507.55],[59,2.89,5223.69],[56,2.17,155.42],[45,0.4,796.3],[36,0.47,775.52],[29,2.65,7.11],
+  [21,5.34,0.98],[19,1.85,5486.78],[19,4.97,213.3],[17,2.99,6275.96],[16,0.03,2544.31]],
+ [[52919,0,0],[8720,1.0721,6283.0758],[309,0.867,12566.152],[27,0.05,3.52],[16,5.19,26.3],
+  [16,3.68,155.42],[10,0.76,18849.23],[9,2.06,77713.77],[7,0.83,775.52],[5,4.66,1577.34]],
+ [[289,5.844,6283.076],[35,0,0],[17,5.49,12566.15],[3,5.2,155.42],[1,4.72,3.52]],
+ [[114,3.142,0],[8,4.13,6283.08],[1,3.84,12566.15]],
+ [[1,3.14,0]]
+];
+function earthL(jde) {
+  var tau = (jde - 2451545) / 365250, s = 0;
+  for (var i = EARTH_L.length - 1; i >= 0; i--) {
+    var t = 0, row = EARTH_L[i];
+    for (var j = 0; j < row.length; j++) t += row[j][0] * Math.cos(row[j][1] + row[j][2] * tau);
+    s = s * tau + t;
+  }
+  return mod(s / 1e8 * R2D, 360);
+}
+/* 太陽の視黄経 (真の分点、章動・光行差込み) */
+function sunLongitude(jde) {
+  var L = earthL(jde) + 180;
+  var T = (jde - 2451545) / 36525;
+  L += -0.09033 / 3600;                                      // FK5 補正
+  var nut = nutation(jde);
+  return deg(L + nut.dpsi - 0.00569);                        // 章動 + 光行差
+}
+
+/* --- 月の黄経 (Meeus 47、主要 30 項) --------------------------------------*/
+var MOON_L = [
+ [0,0,1,0,6288774],[2,0,-1,0,1274027],[2,0,0,0,658314],[0,0,2,0,213618],[0,1,0,0,-185116],
+ [0,0,0,2,-114332],[2,0,-2,0,58793],[2,-1,-1,0,57066],[2,0,1,0,53322],[2,-1,0,0,45758],
+ [0,1,-1,0,-40923],[1,0,0,0,-34720],[0,1,1,0,-30383],[2,0,0,-2,15327],[0,0,1,2,-12528],
+ [0,0,1,-2,10980],[4,0,-1,0,10675],[0,0,3,0,10034],[4,0,-2,0,8548],[2,1,-1,0,-7888],
+ [2,1,0,0,-6766],[1,0,-1,0,-5163],[1,1,0,0,4987],[2,-1,1,0,4036],[2,0,2,0,3994],
+ [4,0,0,0,3861],[2,0,-3,0,3665],[0,1,-2,0,-2689],[2,0,-1,2,-2602],[2,-1,-2,0,2390]
+];
+function moonLongitude(jde) {
+  var T = (jde - 2451545) / 36525;
+  var Lp = 218.3164477 + 481267.88123421 * T - 0.0015786 * T * T + T * T * T / 538841;
+  var D  = 297.8501921 + 445267.1114034 * T - 0.0018819 * T * T + T * T * T / 545868;
+  var M  = 357.5291092 + 35999.0502909 * T - 0.0001536 * T * T;
+  var Mp = 134.9633964 + 477198.8675055 * T + 0.0087414 * T * T + T * T * T / 69699;
+  var F  = 93.2720950 + 483202.0175233 * T - 0.0036539 * T * T;
+  var E = 1 - 0.002516 * T - 0.0000074 * T * T;
+  var sum = 0;
+  for (var i = 0; i < MOON_L.length; i++) {
+    var t = MOON_L[i], e = Math.abs(t[1]) === 1 ? E : (Math.abs(t[1]) === 2 ? E * E : 1);
+    sum += t[4] * e * sin(t[0] * D + t[1] * M + t[2] * Mp + t[3] * F);
+  }
+  return deg(Lp + sum / 1e6 + nutation(jde).dpsi);
+}
+/* 月の交点 (ドラゴンヘッド、平均) */
+function meanNode(jde) {
+  var T = (jde - 2451545) / 36525;
+  return deg(125.0445479 - 1934.1362891 * T + 0.0020754 * T * T + T * T * T / 467441);
+}
+
+/* --- 惑星 (JPL 近似軌道要素 1800-2050) ------------------------------------*/
+var PLANETS = {
+  /*            a            e            I            L             peri         node      */
+  mercury: [[0.38709927, 0.20563593, 7.00497902, 252.25032350, 77.45779628, 48.33076593],
+            [0.00000037, 0.00001906, -0.00594749, 149472.67411175, 0.16047689, -0.12534081]],
+  venus:   [[0.72333566, 0.00677672, 3.39467605, 181.97909950, 131.60246718, 76.67984255],
+            [0.00000390, -0.00004107, -0.00078890, 58517.81538729, 0.00268329, -0.27769418]],
+  earth:   [[1.00000261, 0.01671123, -0.00001531, 100.46457166, 102.93768193, 0.0],
+            [0.00000562, -0.00004392, -0.01294668, 35999.37244981, 0.32327364, 0.0]],
+  mars:    [[1.52371034, 0.09339410, 1.84969142, -4.55343205, -23.94362959, 49.55953891],
+            [0.00001847, 0.00007882, -0.00813131, 19140.30268499, 0.44441088, -0.29257343]],
+  jupiter: [[5.20288700, 0.04838624, 1.30439695, 34.39644051, 14.72847983, 100.47390909],
+            [-0.00011607, -0.00013253, -0.00183714, 3034.74612775, 0.21252668, 0.20469106]],
+  saturn:  [[9.53667594, 0.05386179, 2.48599187, 49.95424423, 92.59887831, 113.66242448],
+            [-0.00125060, -0.00050991, 0.00193609, 1222.49362201, -0.41897216, -0.28867794]],
+  uranus:  [[19.18916464, 0.04725744, 0.77263783, 313.23810451, 170.95427630, 74.01692503],
+            [-0.00196176, -0.00004397, -0.00242939, 428.48202785, 0.40805281, 0.04240589]],
+  neptune: [[30.06992276, 0.00859048, 1.77004347, -55.12002969, 44.96476227, 131.78422574],
+            [0.00026291, 0.00005105, 0.00035372, 218.45945325, -0.32241464, -0.00508664]],
+  pluto:   [[39.48211675, 0.24882730, 17.14001206, 238.92903833, 224.06891629, 110.30393684],
+            [-0.00031596, 0.00005170, 0.00004818, 145.20780515, -0.04062942, -0.01183482]]
+};
+function helioXYZ(name, jde) {          // J2000 黄道座標
+  var p = PLANETS[name], T = (jde - 2451545) / 36525;
+  var a = p[0][0] + p[1][0] * T, e = p[0][1] + p[1][1] * T, I = p[0][2] + p[1][2] * T,
+      L = p[0][3] + p[1][3] * T, w = p[0][4] + p[1][4] * T, O = p[0][5] + p[1][5] * T;
+  var M = mod(L - w + 180, 360) - 180, om = w - O;
+  var E = M, dE = 1, n = 0;
+  while (Math.abs(dE) > 1e-9 && n++ < 60) { dE = (M - (E - e * R2D * sin(E))) / (1 - e * cos(E)); E += dE; }
+  var xp = a * (cos(E) - e), yp = a * Math.sqrt(1 - e * e) * sin(E);
+  var x = (cos(om) * cos(O) - sin(om) * sin(O) * cos(I)) * xp + (-sin(om) * cos(O) - cos(om) * sin(O) * cos(I)) * yp;
+  var y = (cos(om) * sin(O) + sin(om) * cos(O) * cos(I)) * xp + (-sin(om) * sin(O) + cos(om) * cos(O) * cos(I)) * yp;
+  var z = (sin(om) * sin(I)) * xp + (cos(om) * sin(I)) * yp;
+  return { x: x, y: y, z: z };
+}
+function precession(jde) {              // J2000 → その日付の分点 (黄経の一般歳差)
+  var T = (jde - 2451545) / 36525;
+  return 1.3969712 * T + 0.0003086 * T * T;
+}
+function planetLongitude(name, jde) {
+  if (name === 'sun') return sunLongitude(jde);
+  if (name === 'moon') return moonLongitude(jde);
+  var p = helioXYZ(name, jde), e = helioXYZ('earth', jde);
+  var dx = p.x - e.x, dy = p.y - e.y;
+  return deg(atan2(dy, dx) + precession(jde));
+}
+
+/* --- 恒星時・アセンダント・ハウス ----------------------------------------*/
+function gmst(jdUT) {                   // Meeus 12.4 (度)
+  var T = (jdUT - 2451545) / 36525;
+  return deg(280.46061837 + 360.98564736629 * (jdUT - 2451545) + 0.000387933 * T * T - T * T * T / 38710000);
+}
+function lst(jdUT, lonEast) { return deg(gmst(jdUT) + lonEast); }
+
+function ascendant(ramc, lat, eps) {
+  var a = deg(atan2(cos(ramc), -(sin(ramc) * cos(eps) + tan(lat) * sin(eps))));
+  /* ASC は MC から黄経で 0〜180 度先にある */
+  var mc = deg(atan2(sin(ramc), cos(ramc) * cos(eps)));
+  if (mod(a - mc, 360) > 180) a = deg(a + 180);
+  return a;
+}
+function raToLon(ra, eps) {                 /* 黄道上の点: tanλ = tanRA / cosε */
+  return deg(atan2(sin(ra) / cos(eps), cos(ra)));
+}
+/* プラシーダス・ハウス。極地などで解が無い場合は等分ハウスに退避 */
+function houses(ramc, lat, eps, system) {
+  var mc = deg(atan2(sin(ramc), cos(ramc) * cos(eps)));
+  var asc = ascendant(ramc, lat, eps);
+  var c = new Array(12);
+  if (system === 'whole') {
+    var base = Math.floor(asc / 30) * 30;
+    for (var i = 0; i < 12; i++) c[i] = deg(base + 30 * i);
+    return { cusps: c, asc: asc, mc: mc, system: 'whole' };
+  }
+  function semiArc(offset, frac, nocturnal) {
+    var ad = 0, ra = 0;
+    for (var k = 0; k < 40; k++) {
+      ra = nocturnal ? ramc + 90 + ad + frac * (90 - ad) : ramc + frac * (90 + ad);
+      var dec = Math.atan(tan(eps) * sin(ra)) * R2D;
+      var s = tan(lat) * tan(dec);
+      if (Math.abs(s) >= 1) return null;
+      ad = asin(s);
+    }
+    return raToLon(deg(ra), eps);
+  }
+  var c11 = semiArc(0, 1 / 3, false), c12 = semiArc(0, 2 / 3, false),
+      c2 = semiArc(0, 1 / 3, true), c3 = semiArc(0, 2 / 3, true);
+  if (c11 === null || c12 === null || c2 === null || c3 === null || system === 'equal') {
+    for (var j = 0; j < 12; j++) c[j] = deg(asc + 30 * j);
+    return { cusps: c, asc: asc, mc: mc, system: system === 'equal' ? 'equal' : 'equal(自動)' };
+  }
+  c[0] = asc; c[1] = c2; c[2] = c3; c[3] = deg(mc + 180);
+  c[4] = deg(c11 + 180); c[5] = deg(c12 + 180); c[6] = deg(asc + 180);
+  c[7] = deg(c2 + 180); c[8] = deg(c3 + 180); c[9] = mc; c[10] = c11; c[11] = c12;
+  return { cusps: c, asc: asc, mc: mc, system: 'placidus' };
+}
+
+/* --- 均時差 (真太陽時の補正) ----------------------------------------------*/
+function equationOfTime(jde) {          // 分
+  var T = (jde - 2451545) / 36525;
+  var L0 = deg(280.46646 + 36000.76983 * T + 0.0003032 * T * T);   // 平均太陽の黄経
+  var lam = sunLongitude(jde), eps = obliquity(jde), nut = nutation(jde);
+  var ra = deg(atan2(cos(eps) * sin(lam), cos(lam)));
+  var E = L0 - 0.0057183 - ra + nut.dpsi * cos(eps);
+  E = mod(E + 180, 360) - 180;
+  return E * 4;
+}
+
+/* ============================================================================
+ * §2 暦 — 二十四節気と太陰太陽暦(旧暦)
+ * 節入りは四柱推命の月柱・九星の月盤に、旧暦は紫微斗数の命盤に必要。
+ * ==========================================================================*/
+
+/* 太陽黄経が target になる瞬間を求める (返り値は UT のユリウス日) */
+function findSolarLongitude(target, jdGuessUT) {
+  var jd = jdGuessUT;
+  for (var i = 0; i < 12; i++) {
+    var tt = jdUT2TT(jd);
+    var diff = mod(target - sunLongitude(tt) + 180, 360) - 180;
+    jd += diff * 365.2422 / 360;
+    if (Math.abs(diff) < 1e-7) break;
+  }
+  return jd;
+}
+/* 節気の瞬間 (target 度 → その年の通日)。呼び出しが多いのでメモ化する */
+var _termCache = {};
+function solarTermJD(year, target) {
+  var key = year + ':' + target;
+  if (_termCache[key] === undefined) _termCache[key] = _solarTermJD(year, target);
+  return _termCache[key];
+}
+function _solarTermJD(year, target) {
+  var approx = toJD(year, 1, 1) + mod(target - 280, 360) * 365.2422 / 360;
+  var jd = findSolarLongitude(target, approx);
+  /* 年をまたいだ場合の補正 */
+  if (fromJD(jd).y > year) jd = findSolarLongitude(target, approx - 365.2422);
+  if (fromJD(jd).y < year) jd = findSolarLongitude(target, approx + 365.2422);
+  return jd;
+}
+var TERM_NAMES = ['春分','清明','穀雨','立夏','小満','芒種','夏至','小暑','大暑','立秋','処暑','白露',
+                  '秋分','寒露','霜降','立冬','小雪','大雪','冬至','小寒','大寒','立春','雨水','啓蟄'];
+/* index 0 = 春分(0度)、以降 15 度きざみ。奇数番が「節」、偶数番が「中気」 */
+function termName(lon) { return TERM_NAMES[Math.round(mod(lon, 360) / 15) % 24]; }
+
+/* その年の「節」(立春から翌年の小寒まで)。月柱・月盤に使う */
+function majorTerms(year) {
+  var out = [], lons = [315, 345, 15, 45, 75, 105, 135, 165, 195, 225, 255, 285, 315];
+  for (var i = 0; i < 13; i++) {
+    var y = i >= 11 ? year + 1 : year;      // 小寒(285度)と翌立春は翌暦年に入る
+    out.push({ lon: lons[i], name: termName(lons[i]), jd: solarTermJD(y, lons[i]) });
+  }
+  return out;
+}
+/* 二十四節気すべて */
+function allTerms(year) {
+  var out = [];
+  for (var i = 0; i < 24; i++) { var lon = i * 15; out.push({ lon: lon, name: termName(lon), jd: solarTermJD(year, lon) }); }
+  out.sort(function (a, b) { return a.jd - b.jd; });
+  return out;
+}
+
+/* --- 朔 (新月) の時刻: Meeus 49 ------------------------------------------*/
+var NM_A = [[299.77,0.107408,0.000325],[251.88,0.016321,0.000165],[251.83,26.651886,0.000164],
+ [349.42,36.412478,0.000126],[84.66,18.206239,0.000110],[141.74,53.303771,0.000062],
+ [207.14,2.453732,0.000060],[154.84,7.306860,0.000056],[34.52,27.261239,0.000047],
+ [207.19,0.121824,0.000042],[291.34,1.844379,0.000040],[161.72,24.198154,0.000037],
+ [239.56,25.513099,0.000035],[331.55,3.592518,0.000023]];
+function newMoonJD(k) {                 // k は 2000-01-06 の朔を 0 とする通番。返り値は UT
+  var T = k / 1236.85;
+  var jde = 2451550.09766 + 29.530588861 * k + 0.00015437 * T * T - 0.00000015 * T * T * T + 0.00000000073 * Math.pow(T, 4);
+  var E = 1 - 0.002516 * T - 0.0000074 * T * T;
+  var M  = 2.5534 + 29.10535670 * k - 0.0000014 * T * T - 0.00000011 * T * T * T;
+  var Mp = 201.5643 + 385.81693528 * k + 0.0107582 * T * T + 0.00001238 * T * T * T - 0.000000058 * Math.pow(T, 4);
+  var F  = 160.7108 + 390.67050284 * k - 0.0016118 * T * T - 0.00000227 * T * T * T + 0.000000011 * Math.pow(T, 4);
+  var Om = 124.7746 - 1.56375588 * k + 0.0020672 * T * T + 0.00000215 * T * T * T;
+  var s =
+    -0.40720 * sin(Mp) + 0.17241 * E * sin(M) + 0.01608 * sin(2 * Mp) + 0.01039 * sin(2 * F)
+    + 0.00739 * E * sin(Mp - M) - 0.00514 * E * sin(Mp + M) + 0.00208 * E * E * sin(2 * M)
+    - 0.00111 * sin(Mp - 2 * F) - 0.00057 * sin(Mp + 2 * F) + 0.00056 * E * sin(2 * Mp + M)
+    - 0.00042 * sin(3 * Mp) + 0.00042 * E * sin(M + 2 * F) + 0.00038 * E * sin(M - 2 * F)
+    - 0.00024 * E * sin(2 * Mp - M) - 0.00017 * sin(Om) - 0.00007 * sin(Mp + 2 * M)
+    + 0.00004 * sin(2 * Mp - 2 * F) + 0.00004 * sin(3 * M) + 0.00003 * sin(Mp + M - 2 * F)
+    + 0.00003 * sin(2 * Mp + 2 * F) - 0.00003 * sin(Mp + M + 2 * F) + 0.00003 * sin(Mp - M + 2 * F)
+    - 0.00002 * sin(Mp - M - 2 * F) - 0.00002 * sin(3 * Mp + M) + 0.00002 * sin(4 * Mp);
+  var add = 0;
+  for (var j = 0; j < NM_A.length; j++) add += NM_A[j][2] * sin(NM_A[j][0] + NM_A[j][1] * k);
+  jde += s + add;
+  return jde - deltaT(fromJD(jde).y) / 86400;
+}
+/* jd 以前で最も近い朔の k */
+function kBefore(jd) {
+  var y = fromJD(jd).y, f = fromJD(jd);
+  var yr = y + (f.m - 1) / 12;
+  var k = Math.floor((yr - 2000) * 12.3685) + 2;
+  while (newMoonJD(k) > jd) k--;
+  while (newMoonJD(k + 1) <= jd) k++;
+  return k;
+}
+
+/* --- 旧暦 (中国式・置閏は無中気法、基準時は tz 時) ------------------------*/
+function localMidnight(jd, tz) { return Math.floor(jd + 0.5 + tz / 24) - 0.5 - tz / 24; }
+
+function lunarCalendar(jdUT, tz) {
+  tz = (tz === undefined) ? 8 : tz;                       // 中国式は東経120度(+8)基準
+  var day0 = localMidnight(jdUT, tz);
+  var cy = fromJD(jdUT + tz / 24).y;
+  /* この日が属する「歳」(冬至から冬至) を決める */
+  var ws = solarTermJD(cy, 270);                          // その年の冬至
+  var wsStart, wsEnd;
+  if (day0 >= localMidnight(ws, tz)) { wsStart = ws; wsEnd = solarTermJD(cy + 1, 270); }
+  else { wsStart = solarTermJD(cy - 1, 270); wsEnd = ws; }
+  var k11 = kBefore(localMidnight(wsStart, tz) + 0.999),  // 冬至を含む月の朔
+      k11n = kBefore(localMidnight(wsEnd, tz) + 0.999);
+  var nMonths = k11n - k11;                               // 13 なら閏年
+  var starts = [];
+  for (var i = 0; i <= nMonths; i++) starts.push(localMidnight(newMoonJD(k11 + i), tz));
+  var leapIndex = -1;
+  if (nMonths === 13) {
+    for (var j = 1; j <= 13; j++) {                       // 中気を含まない最初の月
+      if (!hasMajorTerm(starts[j], starts[j + 1] === undefined ? starts[j] + 30 : starts[j + 1], tz)) { leapIndex = j; break; }
+    }
+    if (leapIndex < 0) leapIndex = 13;
+  }
+  /* 月番号の割り当て: 冬至の月が 11 月 */
+  var nums = [], isLeaps = [], num = 11;
+  for (var m = 0; m <= nMonths; m++) {
+    if (m === leapIndex) { nums.push(num); isLeaps.push(true); }
+    else { nums.push(num); isLeaps.push(false); num = num % 12 + 1; }
+  }
+  if (leapIndex >= 0) {                                   // 閏月は前月と同番号
+    nums = []; isLeaps = []; num = 11;
+    for (var q = 0; q <= nMonths; q++) {
+      if (q === leapIndex) { nums.push(nums[q - 1]); isLeaps.push(true); }
+      else { if (q > 0) num = num % 12 + 1; nums.push(num); isLeaps.push(false); }
+    }
+  }
+  var idx = 0;
+  for (var r = nMonths; r >= 0; r--) if (day0 >= starts[r]) { idx = r; break; }
+  var lday = Math.round(day0 - starts[idx]) + 1;
+  /* 旧暦年: 正月朔日の属する西暦年 */
+  var lyear = cy;
+  var firstMonthIdx = -1;
+  for (var s2 = 0; s2 <= nMonths; s2++) if (nums[s2] === 1 && !isLeaps[s2]) { firstMonthIdx = s2; break; }
+  if (firstMonthIdx >= 0) lyear = fromJD(starts[firstMonthIdx] + 0.5).y - (idx < firstMonthIdx ? 1 : 0);
+  return { year: lyear, month: nums[idx], day: lday, leap: isLeaps[idx],
+           monthStart: starts[idx], monthLength: (starts[idx + 1] || starts[idx] + 30) - starts[idx] };
+}
+function hasMajorTerm(startJD, endJD, tz) {               // 中気 (黄経 30 の倍数) を含むか
+  var f = fromJD(startJD + tz / 24);
+  for (var y = f.y - 1; y <= f.y + 1; y++) {
+    for (var i = 0; i < 12; i++) {
+      var t = solarTermJD(y, i * 30);
+      if (t >= startJD && t < endJD) return true;
+    }
+  }
+  return false;
+}
+
+/* ============================================================================
+ * §3 干支の基礎 — 十干・十二支・蔵干・十神・十二運・納音・支合冲刑害
+ *   四柱推命 / 算命学 / 紫微斗数 / 九星気学 が共有する土台
+ * ==========================================================================*/
+var STEM  = ['甲','乙','丙','丁','戊','己','庚','辛','壬','癸'];
+var BRANCH= ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥'];
+var STEM_YOMI = ['きのえ','きのと','ひのえ','ひのと','つちのえ','つちのと','かのえ','かのと','みずのえ','みずのと'];
+var BRANCH_YOMI=['ね','うし','とら','う','たつ','み','うま','ひつじ','さる','とり','いぬ','い'];
+var ELEM = ['木','火','土','金','水'];
+var STEM_ELEM   = [0,0,1,1,2,2,3,3,4,4];             // 木木火火土土金金水水
+var BRANCH_ELEM = [4,2,0,0,2,1,1,2,3,3,2,4];         // 子水 丑土 寅木 卯木 辰土 巳火 午火 未土 申金 酉金 戌土 亥水
+var STEM_YIN    = [0,1,0,1,0,1,0,1,0,1];             // 0=陽 1=陰
+var BRANCH_YIN  = [0,1,0,1,0,1,0,1,0,1,0,1];
+var BRANCH_ANIMAL = ['鼠','牛','虎','兎','龍','蛇','馬','羊','猿','鶏','犬','猪'];
+
+/* 蔵干 (本気・中気・余気と重み) */
+var HIDDEN = {
+  0:[[9,100]], 1:[[5,60],[9,30],[7,10]], 2:[[0,60],[2,30],[4,10]], 3:[[1,100]],
+  4:[[4,60],[1,30],[9,10]], 5:[[2,60],[6,30],[4,10]], 6:[[3,70],[5,30]], 7:[[5,60],[3,30],[1,10]],
+  8:[[6,60],[8,30],[4,10]], 9:[[7,100]], 10:[[4,60],[7,30],[3,10]], 11:[[8,70],[0,30]]
+};
+var MAIN_HIDDEN = [9,5,0,1,4,2,3,5,6,7,4,8];         // 中元(本元)。算命学の年支・日支に使う
+
+/* 算命学の蔵干表: 節入りからの経過日数で切り替わる */
+var SANMEI_HIDDEN = [
+  [[10,8],[30,9]],            // 子: 壬 / 癸
+  [[9,9],[12,7],[30,5]],      // 丑: 癸 / 辛 / 己
+  [[7,4],[14,2],[30,0]],      // 寅: 戊 / 丙 / 甲
+  [[10,0],[30,1]],            // 卯: 甲 / 乙
+  [[9,1],[12,9],[30,4]],      // 辰: 乙 / 癸 / 戊
+  [[7,4],[14,6],[30,2]],      // 巳: 戊 / 庚 / 丙
+  [[10,2],[19,5],[30,3]],     // 午: 丙 / 己 / 丁
+  [[9,3],[12,1],[30,5]],      // 未: 丁 / 乙 / 己
+  [[7,4],[14,8],[30,6]],      // 申: 戊 / 壬 / 庚
+  [[10,6],[30,7]],            // 酉: 庚 / 辛
+  [[9,7],[12,3],[30,4]],      // 戌: 辛 / 丁 / 戊
+  [[7,4],[14,0],[30,8]]       // 亥: 戊 / 甲 / 壬
+];
+function sanmeiHidden(branch, daysFromTerm) {
+  var t = SANMEI_HIDDEN[branch];
+  for (var i = 0; i < t.length; i++) if (daysFromTerm <= t[i][0]) return t[i][1];
+  return t[t.length - 1][1];
+}
+
+/* 十神 */
+var TENGOD = ['比肩','劫財','食神','傷官','偏財','正財','偏官','正官','偏印','印綬'];
+function tenGod(dayStem, other) {
+  var de = STEM_ELEM[dayStem], oe = STEM_ELEM[other];
+  var same = STEM_YIN[dayStem] === STEM_YIN[other];
+  if (oe === de) return same ? 0 : 1;                       // 比肩 / 劫財
+  if (oe === (de + 1) % 5) return same ? 2 : 3;             // 我生 = 食神 / 傷官
+  if (oe === (de + 2) % 5) return same ? 4 : 5;             // 我剋 = 偏財 / 正財
+  if (oe === (de + 3) % 5) return same ? 6 : 7;             // 剋我 = 偏官 / 正官
+  return same ? 8 : 9;                                      // 生我 = 偏印 / 印綬
+}
+/* 十二運 */
+var TWELVE = ['長生','沐浴','冠帯','建禄','帝旺','衰','病','死','墓','絶','胎','養'];
+var LIFE_START = [11,6,2,9,2,9,5,0,8,3];                    // 各日干の長生の支
+function twelveStage(stem, branch) {
+  var dir = STEM_YIN[stem] ? -1 : 1;
+  return mod((branch - LIFE_START[stem]) * dir, 12);
+}
+/* 十二大従星 (算命学) は十二運と一対一対応 */
+var JUSEI = ['天報','天印','天貴','天恍','天南','天禄','天将','天堂','天胡','天極','天庫','天馳'];
+var JUSEI_BY_STAGE = { 10:0, 11:1, 0:2, 1:3, 2:4, 3:5, 4:6, 5:7, 6:8, 7:9, 8:10, 9:11 };
+var JUSEI_ENERGY = { '天報':3,'天印':6,'天貴':9,'天恍':7,'天南':10,'天禄':11,'天将':12,'天堂':8,'天胡':4,'天極':2,'天庫':5,'天馳':1 };
+/* 十大主星 (算命学) は十神と一対一対応 */
+var SHUSEI = ['貫索星','石門星','鳳閣星','調舒星','禄存星','司禄星','車騎星','牽牛星','龍高星','玉堂星'];
+
+/* 納音 (30 対) */
+var NAYIN = ['海中金','炉中火','大林木','路傍土','剣鋒金','山頭火','澗下水','城頭土','白蝋金','楊柳木',
+             '泉中水','屋上土','霹靂火','松柏木','長流水','沙中金','山下火','平地木','壁上土','金箔金',
+             '覆灯火','天河水','大駅土','釵釧金','桑柘木','大渓水','沙中土','天上火','石榴木','大海水'];
+var NAYIN_ELEM=[3,1,0,2,3,1,4,2,3,0,4,2,1,0,4,3,1,0,2,3,1,4,2,3,0,4,2,1,0,4];
+function sexagenary(stem, branch) {                          // 0..59
+  for (var i = 0; i < 60; i++) if (i % 10 === stem && i % 12 === branch) return i;
+  return -1;
+}
+function nayin(stem, branch) { var s = sexagenary(stem, branch); return { name: NAYIN[Math.floor(s / 2)], elem: NAYIN_ELEM[Math.floor(s / 2)] }; }
+/* 空亡 (天中殺) */
+function kubou(stem, branch) {
+  var head = mod(branch - stem, 12);
+  return [mod(head + 10, 12), mod(head + 11, 12)];
+}
+var TENCHU_NAME = { '10,11':'戌亥天中殺','8,9':'申酉天中殺','6,7':'午未天中殺','4,5':'辰巳天中殺','2,3':'寅卯天中殺','0,1':'子丑天中殺' };
+
+/* 支の関係 */
+var SANGO = [[8,0,4,4],[11,3,7,0],[2,6,10,1],[5,9,1,3]];     // 三合 [支,支,支,五行]
+var HOGO  = [[2,3,4,0],[5,6,7,1],[8,9,10,3],[11,0,1,4]];     // 方合
+var RIKUGO= [[0,1,2],[2,11,0],[3,10,1],[4,9,3],[5,8,4],[6,7,2]]; // 六合 [支,支,化す五行]
+var KEI   = [[2,5],[5,8],[8,2],[1,10],[10,7],[7,1],[0,3],[3,0]]; // 三刑・相刑
+var JIKEI = [4,6,9,11];                                       // 自刑
+var GAI   = [[0,7],[1,6],[2,5],[3,4],[8,11],[9,10]];          // 六害
+var HA    = [[0,9],[3,6],[4,1],[7,10],[2,11],[5,8]];          // 六破
+function branchRelations(a, b) {
+  var r = [];
+  if (mod(a - b, 12) === 6) r.push({ type: '冲', label: BRANCH[a] + BRANCH[b] + 'の冲', score: -2 });
+  for (var i = 0; i < RIKUGO.length; i++) if ((RIKUGO[i][0] === a && RIKUGO[i][1] === b) || (RIKUGO[i][1] === a && RIKUGO[i][0] === b))
+    r.push({ type: '六合', label: BRANCH[a] + BRANCH[b] + 'の支合', score: 3, elem: RIKUGO[i][2] });
+  for (var j = 0; j < SANGO.length; j++) { var s = SANGO[j];
+    if ([s[0],s[1],s[2]].indexOf(a) >= 0 && [s[0],s[1],s[2]].indexOf(b) >= 0 && a !== b)
+      r.push({ type: '半会', label: BRANCH[a] + BRANCH[b] + 'の半会', score: 2, elem: s[3] }); }
+  for (var k = 0; k < KEI.length; k++) if (KEI[k][0] === a && KEI[k][1] === b) r.push({ type: '刑', label: BRANCH[a] + BRANCH[b] + 'の刑', score: -1.5 });
+  if (a === b && JIKEI.indexOf(a) >= 0) r.push({ type: '自刑', label: BRANCH[a] + 'の自刑', score: -1 });
+  for (var m = 0; m < GAI.length; m++) if ((GAI[m][0] === a && GAI[m][1] === b) || (GAI[m][1] === a && GAI[m][0] === b)) r.push({ type: '害', label: BRANCH[a] + BRANCH[b] + 'の害', score: -1 });
+  for (var n = 0; n < HA.length; n++) if ((HA[n][0] === a && HA[n][1] === b) || (HA[n][1] === a && HA[n][0] === b)) r.push({ type: '破', label: BRANCH[a] + BRANCH[b] + 'の破', score: -0.8 });
+  return r;
+}
+var STEM_GO = [[0,5,2],[1,6,3],[2,7,4],[3,8,0],[4,9,1]];      // 干合 [干,干,化す五行]
+function stemRelations(a, b) {
+  var r = [];
+  for (var i = 0; i < 5; i++) if ((STEM_GO[i][0] === a && STEM_GO[i][1] === b) || (STEM_GO[i][1] === a && STEM_GO[i][0] === b))
+    r.push({ type: '干合', label: STEM[a] + STEM[b] + 'の干合', score: 3, elem: STEM_GO[i][2] });
+  if (mod(a - b, 10) === 6 || mod(b - a, 10) === 6) r.push({ type: '干冲', label: STEM[a] + STEM[b] + 'の剋', score: -1.5 });
+  return r;
+}
+/* 五行の相生・相剋 */
+function elemRelation(a, b) {
+  if (a === b) return '比和';
+  if (b === (a + 1) % 5) return '相生';                       // a が b を生む
+  if (a === (b + 1) % 5) return '被生';
+  if (b === (a + 2) % 5) return '相剋';                       // a が b を剋す
+  return '被剋';
+}
+
+/* ============================================================================
+ * §4 四柱推命 — 年月日時の四柱、蔵干、十神、身強弱、用神、大運
+ * ==========================================================================*/
+/* 日干支: 通用の (ユリウス日番号 + 49) mod 60。
+   検算 — 1900-01-01=甲戌、2000-01-01=戊午 と一致する */
+function dayIndexFromJDN(jdn) { return mod(jdn + 49, 60); }
+
+function pillar(stem, branch) {
+  return { stem: stem, branch: branch, name: STEM[stem] + BRANCH[branch],
+           elem: STEM_ELEM[stem], branchElem: BRANCH_ELEM[branch],
+           nayin: nayin(stem, branch), sex: sexagenary(stem, branch) };
+}
+/* 生年月日時 → 四柱。b は正規化済みの出生情報 */
+function fourPillars(b) {
+  var jd = b.jdUT, tz = b.tz;
+  var civil = fromJD(jd + tz / 24);
+  /* --- 年柱: 立春が境 --- */
+  var risshun = solarTermJD(civil.y, 315);
+  var solarYear = jd < risshun ? civil.y - 1 : civil.y;
+  var yStem = mod(solarYear - 4, 10), yBranch = mod(solarYear - 4, 12);
+  /* --- 月柱: 節入りが境 --- */
+  var terms = majorTerms(solarYear), mi = 0;
+  for (var i = 0; i < 12; i++) if (jd >= terms[i].jd) mi = i;
+  var monthOrder = mi;                                        // 0 = 寅月(立春〜)
+  var mBranch = mod(2 + monthOrder, 12);
+  var mStem = mod((yStem % 5) * 2 + 2 + monthOrder, 10);
+  var daysFromTerm = (jd - terms[mi].jd);
+  /* --- 日柱 --- */
+  var solarTime = b.trueSolarTime ? jd + (b.lon / 15 - tz) / 24 + equationOfTime(jdUT2TT(jd)) / 1440 : jd;
+  var hourLocal = mod((solarTime + tz / 24 + 0.5) * 24, 24);   // 0..24 の時刻
+  var dayShift = 0;
+  if (b.lateNightNextDay && hourLocal >= 23) dayShift = 1;     // 23時以降を翌日とする流派
+  var jdn = Math.floor(solarTime + tz / 24 + 0.5) + dayShift;
+  var dsex = dayIndexFromJDN(jdn);
+  var dStem = dsex % 10, dBranch = dsex % 12;
+  /* --- 時柱 --- */
+  var hBranch = Math.floor(mod(hourLocal + 1, 24) / 2);
+  var hStem = mod((dStem % 5) * 2 + hBranch, 10);
+  var p = { year: pillar(yStem, yBranch), month: pillar(mStem, mBranch),
+            day: pillar(dStem, dBranch), hour: pillar(hStem, hBranch) };
+  p.solarYear = solarYear;
+  p.monthOrder = monthOrder;
+  p.termName = terms[mi].name;
+  p.daysFromTerm = daysFromTerm;
+  p.nextTerm = terms[mi + 1];
+  p.prevTerm = terms[mi];
+  p.hourLocal = hourLocal;
+  p.solarTimeShiftMin = Math.round((solarTime - jd) * 1440);
+  p.hasHour = !!b.hasHour;
+  p.kubou = kubou(dStem, dBranch);
+  p.tenchusatsu = TENCHU_NAME[p.kubou.join(',')];
+  return p;
+}
+/* 蔵干・十神・十二運を四柱に展開 */
+function pillarDetail(p) {
+  var d = p.day.stem, keys = ['year', 'month', 'day', 'hour'], out = [];
+  for (var i = 0; i < 4; i++) {
+    var k = keys[i]; if (k === 'hour' && !p.hasHour) continue;
+    var pl = p[k], hid = HIDDEN[pl.branch].map(function (h) {
+      return { stem: h[0], name: STEM[h[0]], weight: h[1], tenGod: TENGOD[tenGod(d, h[0])] };
+    });
+    out.push({ key: k, label: { year: '年柱', month: '月柱', day: '日柱', hour: '時柱' }[k],
+      pillar: pl,
+      stemTenGod: k === 'day' ? '日主' : TENGOD[tenGod(d, pl.stem)],
+      hidden: hid,
+      stage: TWELVE[twelveStage(d, pl.branch)],
+      kubouHit: p.kubou.indexOf(pl.branch) >= 0 });
+  }
+  return out;
+}
+/* 五行バランス (蔵干の重み込み) */
+function elementBalance(p) {
+  var s = [0, 0, 0, 0, 0], keys = ['year', 'month', 'day', 'hour'],
+      bw = { year: 1.0, month: 1.6, day: 1.2, hour: 1.0 };
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i]; if (k === 'hour' && !p.hasHour) continue;
+    var pl = p[k];
+    s[STEM_ELEM[pl.stem]] += 10 * (k === 'day' ? 1.2 : 1);
+    var hid = HIDDEN[pl.branch];
+    for (var j = 0; j < hid.length; j++) s[STEM_ELEM[hid[j][0]]] += hid[j][1] / 100 * 10 * bw[k];
+  }
+  var tot = s.reduce(function (a, b) { return a + b; }, 0);
+  return { raw: s, pct: s.map(function (x) { return tot ? x / tot * 100 : 0; }) };
+}
+/* 身強弱と用神 (扶抑 + 調候の簡易併用) */
+function strengthAnalysis(p) {
+  var bal = elementBalance(p), de = STEM_ELEM[p.day.stem], s = bal.raw;
+  var support = s[de] + s[(de + 4) % 5];
+  var drain = s[(de + 1) % 5] + s[(de + 2) % 5] + s[(de + 3) % 5];
+  var ratio = support / (support + drain || 1);
+  var stage = twelveStage(p.day.stem, p.month.branch);
+  var tokurei = [0, 2, 3, 4].indexOf(stage) >= 0;             // 長生・冠帯・建禄・帝旺 = 得令
+  var score = ratio + (tokurei ? 0.08 : -0.04);
+  var strong = score >= 0.5;
+  var favor = strong ? [(de + 1) % 5, (de + 2) % 5, (de + 3) % 5] : [(de + 4) % 5, de];
+  var avoid = strong ? [(de + 4) % 5, de] : [(de + 1) % 5, (de + 2) % 5, (de + 3) % 5];
+  /* 調候: 冬生まれは火、夏生まれは水を補う */
+  var mb = p.month.branch, choko = null;
+  if ([11, 0, 1].indexOf(mb) >= 0) choko = 1;
+  else if ([5, 6, 7].indexOf(mb) >= 0) choko = 4;
+  if (choko !== null && favor.indexOf(choko) < 0 && s[choko] / (s.reduce(function(a,b){return a+b;},0)||1) < 0.15) favor = favor.concat([choko]);
+  /* 格局 */
+  var monthMain = MAIN_HIDDEN[p.month.branch];
+  var g = tenGod(p.day.stem, monthMain);
+  var kakkyoku = ['建禄格', '月刃格', '食神格', '傷官格', '偏財格', '正財格', '偏官格', '正官格', '偏印格', '印綬格'][g];
+  return { balance: bal, dayElem: de, support: support, drain: drain, ratio: score,
+           strong: strong, tokurei: tokurei, monthStage: TWELVE[stage],
+           favor: favor, avoid: avoid, kakkyoku: kakkyoku,
+           favorNames: favor.map(function (x) { return ELEM[x]; }),
+           avoidNames: avoid.map(function (x) { return ELEM[x]; }) };
+}
+/* 大運 */
+function majorFortune(p, b) {
+  var forward = (STEM_YIN[p.year.stem] === 0) === (b.sex === 'male');
+  var boundary = forward ? p.nextTerm.jd : p.prevTerm.jd;
+  var days = Math.abs(boundary - b.jdUT);
+  var startAge = days / 3;
+  var list = [];
+  for (var i = 1; i <= 10; i++) {
+    var st = mod(p.month.stem + (forward ? i : -i), 10),
+        br = mod(p.month.branch + (forward ? i : -i), 12);
+    list.push({ index: i, from: startAge + (i - 1) * 10, to: startAge + i * 10,
+      pillar: pillar(st, br), tenGod: TENGOD[tenGod(p.day.stem, st)],
+      stage: TWELVE[twelveStage(p.day.stem, br)] });
+  }
+  return { forward: forward, startAge: startAge, list: list,
+           label: forward ? '順行' : '逆行' };
+}
+/* ある年の年運 (流年) */
+function annualPillar(year) { return pillar(mod(year - 4, 10), mod(year - 4, 12)); }
+
+/* ============================================================================
+ * §5 算命学 — 陰占(三柱)・陽占(人体星図)・十二大従星・天中殺・位相法
+ * ==========================================================================*/
+function sanmei(p) {
+  var d = p.day.stem;
+  var monthHidden = sanmeiHidden(p.month.branch, p.daysFromTerm);
+  var yearHidden = MAIN_HIDDEN[p.year.branch], dayHidden = MAIN_HIDDEN[p.day.branch];
+  function star(s) { return SHUSEI[tenGod(d, s)]; }
+  function ju(br) { return JUSEI[JUSEI_BY_STAGE[twelveStage(d, br)]]; }
+  var body = {
+    head:  { pos: '頭（北）',   star: star(monthHidden), from: '月支 ' + BRANCH[p.month.branch] + 'の蔵干 ' + STEM[monthHidden], mean: '目上・仕事・社会' },
+    chest: { pos: '胸（中央）', star: star(dayHidden),   from: '日支 ' + BRANCH[p.day.branch] + 'の蔵干 ' + STEM[dayHidden],   mean: '本質・家庭・配偶者' },
+    belly: { pos: '腹（南）',   star: star(yearHidden),  from: '年支 ' + BRANCH[p.year.branch] + 'の蔵干 ' + STEM[yearHidden],  mean: '目下・子供・部下' },
+    left:  { pos: '左手（東）', star: star(p.year.stem), from: '年干 ' + STEM[p.year.stem], mean: '友人・仲間・兄弟' },
+    right: { pos: '右手（西）', star: star(p.month.stem),from: '月干 ' + STEM[p.month.stem],mean: '配偶者・パートナー' }
+  };
+  var ages = {
+    shoulder: { pos: '左肩（初年期）', star: ju(p.year.branch),  from: '年支', years: '0〜20歳ごろ' },
+    rightFoot:{ pos: '右足（中年期）', star: ju(p.month.branch), from: '月支', years: '20〜60歳ごろ' },
+    leftFoot: { pos: '左足（晩年期）', star: ju(p.day.branch),   from: '日支', years: '60歳以降' }
+  };
+  var energy = JUSEI_ENERGY[ages.shoulder.star] + JUSEI_ENERGY[ages.rightFoot.star] + JUSEI_ENERGY[ages.leftFoot.star];
+  /* 位相法: 三柱の支どうしの関係 */
+  var brs = [p.year.branch, p.month.branch, p.day.branch], labels = ['年', '月', '日'], iso = [];
+  for (var i = 0; i < 3; i++) for (var j = i + 1; j < 3; j++) {
+    var rels = branchRelations(brs[i], brs[j]);
+    for (var k = 0; k < rels.length; k++) iso.push({ pair: labels[i] + '-' + labels[j], rel: rels[k] });
+  }
+  if (SANGO.some(function (s) { return [s[0],s[1],s[2]].every(function (x) { return brs.indexOf(x) >= 0; }); }))
+    iso.push({ pair: '三柱', rel: { type: '三合会局', label: '三合会局（大きな目的に人が集まる）', score: 4 } });
+  if (HOGO.some(function (s) { return [s[0],s[1],s[2]].every(function (x) { return brs.indexOf(x) >= 0; }); }))
+    iso.push({ pair: '三柱', rel: { type: '方三位', label: '方三位（同じ方向に強く突き進む）', score: 4 } });
+  /* 天中殺 */
+  var dayKu = kubou(p.day.stem, p.day.branch), yearKu = kubou(p.year.stem, p.year.branch);
+  return {
+    inzan: [p.year, p.month, p.day],
+    body: body, ages: ages, energy: energy,
+    energyLabel: energy >= 28 ? '非常に大きい' : energy >= 21 ? '大きい' : energy >= 14 ? '標準' : '小さい（省エネ型）',
+    iso: iso,
+    tenchusatsu: { day: TENCHU_NAME[dayKu.join(',')], year: TENCHU_NAME[yearKu.join(',')],
+                   branches: dayKu.map(function (x) { return BRANCH[x]; }) },
+    mainStar: body.chest.star, socialStar: body.head.star
+  };
+}
+/* その年が天中殺かどうか */
+function isTenchu(p, year) { return p.kubou.indexOf(mod(year - 4, 12)) >= 0; }
+
+/* ============================================================================
+ * §6 紫微斗数 — 十二宮・十四主星・四化・大限
+ * ==========================================================================*/
+var ZW_PALACE = ['命宮','兄弟宮','夫妻宮','子女宮','財帛宮','疾厄宮','遷移宮','僕役宮','官禄宮','田宅宮','福徳宮','父母宮'];
+var ZW_STARS = ['紫微','天機','太陽','武曲','天同','廉貞','天府','太陰','貪狼','巨門','天相','天梁','七殺','破軍'];
+/* 廟旺利陥（全書系の一般表。流派により差がある） 4=廟 3=旺/得 2=利 1=平 0=陥 */
+var ZW_BRIGHT = {
+  '紫微':[1,4,4,3,4,3,4,4,3,1,4,3], '天機':[4,0,3,3,2,1,4,0,3,3,2,1],
+  '太陽':[0,0,3,4,3,3,4,3,3,1,0,0], '武曲':[3,4,3,2,4,1,3,4,3,2,4,1],
+  '天同':[3,0,2,4,1,4,0,0,3,1,1,4], '廉貞':[1,2,4,1,2,0,1,2,4,1,2,0],
+  '天府':[4,4,4,3,4,3,3,4,3,3,4,3], '太陰':[4,4,0,0,0,0,0,1,2,3,4,4],
+  '貪狼':[3,4,1,2,4,0,3,4,1,2,4,0], '巨門':[3,3,4,4,1,4,3,1,4,4,0,3],
+  '天相':[4,4,4,0,3,1,4,4,4,0,3,1], '天梁':[4,3,4,4,4,0,4,3,0,1,4,0],
+  '七殺':[3,4,4,3,4,1,3,4,4,3,4,1], '破軍':[4,3,3,0,3,1,4,3,3,0,3,1]
+};
+var ZW_SIHUA = {                 // 年干 → [化禄, 化権, 化科, 化忌]
+  0:['廉貞','破軍','武曲','太陽'], 1:['天機','天梁','紫微','太陰'], 2:['天同','天機','文昌','廉貞'],
+  3:['太陰','天同','天機','巨門'], 4:['貪狼','太陰','右弼','天機'], 5:['武曲','貪狼','天梁','文曲'],
+  6:['太陽','武曲','太陰','天同'], 7:['巨門','太陽','文曲','文昌'], 8:['天梁','紫微','左輔','武曲'],
+  9:['破軍','巨門','太陰','貪狼']
+};
+var ZW_ROKUZON = [2,3,5,6,5,6,8,9,11,0];               // 年干 → 禄存の支
+var ZW_KAIETSU = { 0:[1,7], 4:[1,7], 6:[1,7], 1:[0,8], 5:[0,8], 2:[11,9], 3:[11,9], 7:[6,2], 8:[3,5], 9:[3,5] };
+var ZW_KYOKU = { 4:[2,'水二局'], 0:[3,'木三局'], 3:[4,'金四局'], 2:[5,'土五局'], 1:[6,'火六局'] };
+
+function ziwei(p, lunar, b) {
+  var lm = lunar.month, ld = lunar.day, hourIdx = p.hour.branch;
+  /* 閏月は 15 日以前を前月、16 日以降を翌月として扱う一般則 */
+  var useMonth = lm, leapNote = null;
+  if (lunar.leap) { if (ld >= 16) { useMonth = lm % 12 + 1; leapNote = '閏月生まれのため翌月として計算'; }
+                    else leapNote = '閏月生まれのため当月として計算'; }
+  var ming = mod(2 + (useMonth - 1) - hourIdx, 12);
+  var shen = mod(2 + (useMonth - 1) + hourIdx, 12);
+  var stemBase = mod((p.year.stem % 5) * 2 + 2, 10);      // 五虎遁: 寅宮の天干
+  function palaceStem(br) { return mod(stemBase + mod(br - 2, 12), 10); }
+  var ny = nayin(palaceStem(ming), ming);
+  var kyoku = ZW_KYOKU[ny.elem];
+  var n = kyoku[0];
+  /* 紫微星の位置 */
+  var m = Math.ceil(ld / n), rem = n * m - ld;
+  var zi = mod(2 + (m - 1) + (rem % 2 === 0 ? rem : -rem), 12);
+  var fu = mod(4 - zi, 12);
+  var pos = {};
+  pos['紫微'] = zi; pos['天機'] = mod(zi - 1, 12); pos['太陽'] = mod(zi - 3, 12);
+  pos['武曲'] = mod(zi - 4, 12); pos['天同'] = mod(zi - 5, 12); pos['廉貞'] = mod(zi - 8, 12);
+  pos['天府'] = fu; pos['太陰'] = mod(fu + 1, 12); pos['貪狼'] = mod(fu + 2, 12);
+  pos['巨門'] = mod(fu + 3, 12); pos['天相'] = mod(fu + 4, 12); pos['天梁'] = mod(fu + 5, 12);
+  pos['七殺'] = mod(fu + 6, 12); pos['破軍'] = mod(fu + 10, 12);
+  /* 六吉星・禄存系 */
+  pos['文昌'] = mod(10 - hourIdx, 12); pos['文曲'] = mod(4 + hourIdx, 12);
+  pos['左輔'] = mod(4 + (useMonth - 1), 12); pos['右弼'] = mod(10 - (useMonth - 1), 12);
+  pos['天魁'] = ZW_KAIETSU[p.year.stem][0]; pos['天鉞'] = ZW_KAIETSU[p.year.stem][1];
+  var rz = ZW_ROKUZON[p.year.stem];
+  pos['禄存'] = rz; pos['擎羊'] = mod(rz + 1, 12); pos['陀羅'] = mod(rz - 1, 12);
+  var horse = { 2:8, 6:8, 10:8, 8:2, 0:2, 4:2, 5:11, 9:11, 1:11, 11:5, 3:5, 7:5 };
+  pos['天馬'] = horse[p.year.branch];
+  var sihua = ZW_SIHUA[p.year.stem], hua = {};
+  ['禄','権','科','忌'].forEach(function (h, i) { hua[sihua[i]] = h; });
+  /* 十二宮を組み立て */
+  var palaces = [];
+  for (var i = 0; i < 12; i++) {
+    var br = mod(ming - i, 12), stars = [], majors = [];
+    for (var s in pos) if (pos[s] === br) {
+      var isMajor = ZW_STARS.indexOf(s) >= 0;
+      var e = { name: s, major: isMajor, hua: hua[s] || null,
+                bright: isMajor ? ['陥','平','利','旺','廟'][ZW_BRIGHT[s][br]] : null,
+                brightVal: isMajor ? ZW_BRIGHT[s][br] : null };
+      stars.push(e); if (isMajor) majors.push(e);
+    }
+    palaces.push({ name: ZW_PALACE[i], branch: br, branchName: BRANCH[br],
+      stem: palaceStem(br), stemName: STEM[palaceStem(br)],
+      stars: stars, majors: majors, isBody: br === shen,
+      empty: majors.length === 0,
+      opposite: mod(br + 6, 12) });
+  }
+  /* 大限 */
+  var forward = (STEM_YIN[p.year.stem] === 0) === (b.sex === 'male');
+  var limits = [];
+  for (var j = 0; j < 12; j++) {
+    var br2 = mod(ming + (forward ? j : -j), 12);
+    var pal = palaces.filter(function (x) { return x.branch === br2; })[0];
+    limits.push({ from: n + j * 10, to: n + j * 10 + 9, palace: pal.name, branchName: BRANCH[br2],
+                  majors: pal.majors.map(function (x) { return x.name + '(' + x.bright + ')'; }) });
+  }
+  return { ming: ming, mingName: BRANCH[ming], shen: shen, shenName: BRANCH[shen],
+           kyoku: kyoku[1], kyokuNum: n, nayin: ny.name, palaces: palaces, pos: pos, hua: hua,
+           limits: limits, forward: forward, lunar: lunar, leapNote: leapNote,
+           mingPalace: palaces[0], bodyPalace: palaces.filter(function (x) { return x.isBody; })[0] };
+}
+
+/* ============================================================================
+ * §7 西洋占星術 — 出生図・ハウス・アスペクト / インド占星術 / 宿曜
+ * ==========================================================================*/
+var SIGNS = ['牡羊座','牡牛座','双子座','蟹座','獅子座','乙女座','天秤座','蠍座','射手座','山羊座','水瓶座','魚座'];
+var SIGN_ELEM = ['火','地','風','水','火','地','風','水','火','地','風','水'];
+var SIGN_MODE = ['活動','不動','柔軟','活動','不動','柔軟','活動','不動','柔軟','活動','不動','柔軟'];
+var SIGN_RULER= ['火星','金星','水星','月','太陽','水星','金星','冥王星','木星','土星','天王星','海王星'];
+var PLANETS_JA = [
+  { key: 'sun', ja: '太陽', w: 3.0 }, { key: 'moon', ja: '月', w: 3.0 },
+  { key: 'mercury', ja: '水星', w: 1.6 }, { key: 'venus', ja: '金星', w: 1.8 },
+  { key: 'mars', ja: '火星', w: 1.8 }, { key: 'jupiter', ja: '木星', w: 1.5 },
+  { key: 'saturn', ja: '土星', w: 1.5 }, { key: 'uranus', ja: '天王星', w: 0.9 },
+  { key: 'neptune', ja: '海王星', w: 0.9 }, { key: 'pluto', ja: '冥王星', w: 0.9 }
+];
+var ASPECTS = [
+  { name: '合', deg: 0, orb: 8, score: 0, kind: 'major' },
+  { name: '衝', deg: 180, orb: 8, score: -1, kind: 'hard' },
+  { name: 'トライン', deg: 120, orb: 7, score: 1, kind: 'soft' },
+  { name: 'スクエア', deg: 90, orb: 7, score: -1, kind: 'hard' },
+  { name: 'セクスタイル', deg: 60, orb: 5, score: 0.7, kind: 'soft' },
+  { name: 'クインカンクス', deg: 150, orb: 3, score: -0.4, kind: 'minor' },
+  { name: 'セミセクスタイル', deg: 30, orb: 2, score: 0.3, kind: 'minor' }
+];
+function signOf(lon) { return Math.floor(mod(lon, 360) / 30); }
+function degInSign(lon) { return mod(lon, 30); }
+function fmtLon(lon) {
+  var s = signOf(lon), d = degInSign(lon), dd = Math.floor(d), mm = Math.floor((d - dd) * 60);
+  return SIGNS[s] + ' ' + dd + '°' + (mm < 10 ? '0' : '') + mm + "'";
+}
+function houseOf(lon, cusps) {
+  for (var i = 0; i < 12; i++) {
+    var a = cusps[i], b = cusps[(i + 1) % 12];
+    if (mod(lon - a, 360) < mod(b - a, 360)) return i + 1;
+  }
+  return 1;
+}
+function western(b, system) {
+  var jde = jdUT2TT(b.jdUT), eps = obliquity(jde);
+  var ramc = lst(b.jdUT, b.lon);
+  var h = houses(ramc, b.lat, eps, b.hasHour ? (system || 'placidus') : 'whole');
+  var bodies = [];
+  for (var i = 0; i < PLANETS_JA.length; i++) {
+    var pj = PLANETS_JA[i], lon = planetLongitude(pj.key, jde);
+    var d1 = planetLongitude(pj.key, jde - 0.5), d2 = planetLongitude(pj.key, jde + 0.5);
+    var speed = mod(d2 - d1 + 180, 360) - 180;
+    bodies.push({ key: pj.key, name: pj.ja, lon: lon, weight: pj.w,
+      sign: signOf(lon), signName: SIGNS[signOf(lon)], text: fmtLon(lon),
+      retro: speed < 0 && pj.key !== 'sun' && pj.key !== 'moon',
+      house: b.hasHour ? houseOf(lon, h.cusps) : null });
+  }
+  var node = meanNode(jde);
+  var sun = bodies[0].lon, moon = bodies[1].lon;
+  var dayBirth = mod(sun - h.asc, 360) > 180;                 // 太陽が地平線より上か
+  var fortune = deg(h.asc + (dayBirth ? moon - sun : sun - moon));
+  var points = [
+    { name: 'ASC', lon: h.asc, text: fmtLon(h.asc), sign: signOf(h.asc), signName: SIGNS[signOf(h.asc)] },
+    { name: 'MC', lon: h.mc, text: fmtLon(h.mc), sign: signOf(h.mc), signName: SIGNS[signOf(h.mc)] },
+    { name: 'ドラゴンヘッド', lon: node, text: fmtLon(node), sign: signOf(node), signName: SIGNS[signOf(node)] },
+    { name: 'パート・オブ・フォーチュン', lon: fortune, text: fmtLon(fortune), sign: signOf(fortune), signName: SIGNS[signOf(fortune)] }
+  ];
+  /* アスペクト */
+  var asp = [];
+  for (var x = 0; x < bodies.length; x++) for (var y = x + 1; y < bodies.length; y++) {
+    var diff = Math.abs(mod(bodies[x].lon - bodies[y].lon + 180, 360) - 180);
+    for (var a = 0; a < ASPECTS.length; a++) {
+      var A = ASPECTS[a], orb = Math.abs(diff - A.deg);
+      if (orb <= A.orb) {
+        asp.push({ a: bodies[x].name, b: bodies[y].name, name: A.name, orb: orb,
+                   exact: orb < 1, kind: A.kind, score: A.score,
+                   weight: (bodies[x].weight + bodies[y].weight) / 2 * (1 - orb / A.orb) });
+        break;
+      }
+    }
+  }
+  /* エレメント・クオリティ集計 */
+  var el = { 火: 0, 地: 0, 風: 0, 水: 0 }, mo = { 活動: 0, 不動: 0, 柔軟: 0 };
+  for (var z = 0; z < bodies.length; z++) { el[SIGN_ELEM[bodies[z].sign]] += bodies[z].weight; mo[SIGN_MODE[bodies[z].sign]] += bodies[z].weight; }
+  if (b.hasHour) { el[SIGN_ELEM[signOf(h.asc)]] += 2; mo[SIGN_MODE[signOf(h.asc)]] += 2; }
+  /* ハウス集計 */
+  var hc = []; for (var q = 0; q < 12; q++) hc.push(0);
+  if (b.hasHour) for (var w = 0; w < bodies.length; w++) hc[bodies[w].house - 1] += bodies[w].weight;
+  return { bodies: bodies, points: points, houses: h, aspects: asp, elements: el, modes: mo,
+           houseWeights: hc, dayBirth: dayBirth, obliquity: eps, ramc: ramc,
+           sunSign: bodies[0].signName, moonSign: bodies[1].signName, ascSign: b.hasHour ? SIGNS[signOf(h.asc)] : null };
+}
+/* --- インド占星術 (ラヒリ・アヤナムシャ) ---------------------------------*/
+var NAKSHATRA = ['アシュヴィニー','バラニー','クリッティカー','ローヒニー','ムリガシラー','アールドラー',
+ 'プナルヴァス','プシュヤ','アーシュレーシャー','マガー','プールヴァ・パールグニー','ウッタラ・パールグニー',
+ 'ハスタ','チトラー','スヴァーティー','ヴィシャーカー','アヌラーダー','ジェーシュター','ムーラ',
+ 'プールヴァ・アーシャーダー','ウッタラ・アーシャーダー','シュラヴァナ','ダニシュター','シャタビシャー',
+ 'プールヴァ・バードラパダー','ウッタラ・バードラパダー','レーヴァティー'];
+var SHUKU = ['婁宿','胃宿','昴宿','畢宿','觜宿','参宿','井宿','鬼宿','柳宿','星宿','張宿','翼宿','軫宿',
+ '角宿','亢宿','氐宿','房宿','心宿','尾宿','箕宿','斗宿','女宿','虚宿','危宿','室宿','壁宿','奎宿'];
+var DASHA = [['ケートゥ',7],['金星',20],['太陽',6],['月',10],['火星',7],['ラーフ',18],['木星',16],['土星',19],['水星',17]];
+var RASHI = ['メーシャ(牡羊)','ヴリシャバ(牡牛)','ミトゥナ(双子)','カルカタ(蟹)','シンハ(獅子)','カニヤー(乙女)',
+ 'トゥラー(天秤)','ヴリシュチカ(蠍)','ダヌ(射手)','マカラ(山羊)','クンバ(水瓶)','ミーナ(魚)'];
+function ayanamsa(jd) { return 23.853 + (jd - 2451545) / 365.25 * 0.0139722; }
+function vedic(b) {
+  var jde = jdUT2TT(b.jdUT), ay = ayanamsa(b.jdUT);
+  var moonS = deg(moonLongitude(jde) - ay), sunS = deg(sunLongitude(jde) - ay);
+  var nk = Math.floor(moonS / (360 / 27)), pada = Math.floor(mod(moonS, 360 / 27) / (360 / 108)) + 1;
+  var frac = mod(moonS, 360 / 27) / (360 / 27);
+  var li = nk % 9, rem = DASHA[li][1] * (1 - frac);
+  var seq = [], age = 0;
+  for (var i = 0; i < 9; i++) {
+    var idx = (li + i) % 9, yrs = i === 0 ? rem : DASHA[idx][1];
+    seq.push({ lord: DASHA[idx][0], from: age, to: age + yrs, years: yrs });
+    age += yrs;
+  }
+  return { ayanamsa: ay, moonSid: moonS, sunSid: sunS,
+    rashi: RASHI[Math.floor(moonS / 30)], sunRashi: RASHI[Math.floor(sunS / 30)],
+    nakshatra: NAKSHATRA[nk], nakIndex: nk, pada: pada,
+    shuku: SHUKU[nk], dasha: seq, startLord: DASHA[li][0], balance: rem };
+}
+
+/* ============================================================================
+ * §8 数秘術 / 九星気学 / タロット / 血液型
+ * ==========================================================================*/
+/* --- 数秘術 ---------------------------------------------------------------*/
+function digitSum(n) { var s = 0; n = Math.abs(n); while (n > 0) { s += n % 10; n = Math.floor(n / 10); } return s; }
+function reduceNum(n, keepMaster) {
+  while (n > 9) { if (keepMaster && (n === 11 || n === 22 || n === 33)) return n; n = digitSum(n); }
+  return n;
+}
+var LETTER = { A:1,B:2,C:3,D:4,E:5,F:6,G:7,H:8,I:9,J:1,K:2,L:3,M:4,N:5,O:6,P:7,Q:8,R:9,
+               S:1,T:2,U:3,V:4,W:5,X:6,Y:7,Z:8 };
+var VOWELS = 'AEIOU';
+function nameNumber(name, mode) {
+  var up = (name || '').toUpperCase().replace(/[^A-Z]/g, ''), s = 0;
+  for (var i = 0; i < up.length; i++) {
+    var isV = VOWELS.indexOf(up[i]) >= 0;
+    if (mode === 'soul' && !isV) continue;
+    if (mode === 'persona' && isV) continue;
+    s += LETTER[up[i]];
+  }
+  return up.length ? reduceNum(s, true) : null;
+}
+var LP_MEANING = {
+  1:'開拓者。自分で始めて自分で決めるほど力が出る。',
+  2:'調停者。二者のあいだに立ち、関係のなかで力を発揮する。',
+  3:'表現者。楽しさと創造で場の空気を変える。',
+  4:'構築者。手順と土台をつくり、長く続くものを残す。',
+  5:'変革者。自由と変化のなかで学びが加速する。',
+  6:'養育者。責任と美意識で人と場を整える。',
+  7:'探究者。一人で深く掘り、本質に触れる。',
+  8:'実現者。現実的な力と規模を扱う。',
+  9:'博愛者。個を超えた全体のために働く。',
+  11:'直感の伝達者（マスター数）。感じ取ったものを人に手渡す。',
+  22:'現実の建築家（マスター数）。大きな構想を形にする。',
+  33:'無償の奉仕者（マスター数）。枠を超えて与える。'
+};
+function numerology(y, m, d, name) {
+  var lp = reduceNum(reduceNum(m, true) + reduceNum(d, true) + reduceNum(y, true), true);
+  return {
+    lifePath: lp, lifePathText: LP_MEANING[lp],
+    birthday: reduceNum(d, true), birthdayRaw: d,
+    destiny: nameNumber(name, 'all'), soul: nameNumber(name, 'soul'), persona: nameNumber(name, 'persona'),
+    maturity: nameNumber(name, 'all') ? reduceNum(lp + nameNumber(name, 'all'), true) : null,
+    challenge: [Math.abs(reduceNum(m) - reduceNum(d)), Math.abs(reduceNum(d) - reduceNum(y)),
+                Math.abs(Math.abs(reduceNum(m) - reduceNum(d)) - Math.abs(reduceNum(d) - reduceNum(y)))],
+    personalYear: function (year) { return reduceNum(reduceNum(m) + reduceNum(d) + reduceNum(year)); },
+    personalMonth: function (year, mo) { return reduceNum(reduceNum(reduceNum(m) + reduceNum(d) + reduceNum(year)) + mo); }
+  };
+}
+var PY_THEME = { 1:'種まき・始動', 2:'育成・協力', 3:'開花・表現', 4:'地固め・実務', 5:'変化・移動',
+                 6:'責任・家庭', 7:'内省・充電', 8:'収穫・成果', 9:'手放し・完了' };
+
+/* --- 九星気学 -------------------------------------------------------------*/
+var KYUSEI = ['', '一白水星', '二黒土星', '三碧木星', '四緑木星', '五黄土星', '六白金星', '七赤金星', '八白土星', '九紫火星'];
+var KYUSEI_ELEM = [0, 4, 2, 0, 0, 2, 3, 3, 2, 1];            // 五行 index
+var DIRS = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+var DIR_HOME = [1, 8, 3, 4, 9, 2, 7, 6];                     // 後天定位盤: 各方位の定位星
+function starOfYear(solarYear) {
+  var d = reduceNum(digitSum(solarYear)), s = 11 - d;
+  if (s > 9) s -= 9; if (s < 1) s += 9;
+  return s;
+}
+function monthStar(honmei, monthOrder) {                     // monthOrder 0 = 寅月(2月)
+  var base = ([1, 4, 7].indexOf(honmei) >= 0) ? 8 : ([2, 5, 8].indexOf(honmei) >= 0 ? 5 : 2);
+  return mod(base - 1 - monthOrder, 9) + 1;
+}
+function board(center) {                                     // 中宮星 → 各方位の星
+  var o = {};
+  for (var i = 0; i < 8; i++) o[DIRS[i]] = mod(DIR_HOME[i] - 1 + (center - 5), 9) + 1;
+  o['中央'] = center;
+  return o;
+}
+function starDir(bd, star) { for (var k in bd) if (bd[k] === star) return k; return '中央'; }
+var BRANCH_DIR = ['北','北東','北東','東','南東','南東','南','南西','南西','西','北西','北西'];
+function kigaku(p, sex) {
+  var honmei = starOfYear(p.solarYear);
+  var getsu = monthStar(honmei, p.monthOrder);
+  var hb = board(honmei);                                    // 本命星を中宮に置いた盤
+  var keisha = DIR_HOME[DIRS.indexOf(starDir(hb, getsu))] || 5;
+  if (starDir(hb, getsu) === '中央') keisha = honmei;
+  return { honmei: honmei, honmeiName: KYUSEI[honmei], getsu: getsu, getsuName: KYUSEI[getsu],
+           keisha: keisha, keishaName: KYUSEI[keisha], elem: KYUSEI_ELEM[honmei] };
+}
+/* ある年の吉方位・凶方位 */
+function directions(k, year, monthOrder) {
+  var yearStar = starOfYear(year), yb = board(yearStar);
+  var res = { center: yearStar, board: yb, good: [], bad: [] };
+  var goStar = DIR_HOME.map(function (_, i) { return yb[DIRS[i]]; });
+  var gohsatsu = starDir(yb, 5), anken = gohsatsu === '中央' ? null : DIRS[(DIRS.indexOf(gohsatsu) + 4) % 8];
+  var honmeisatsu = starDir(yb, k.honmei), teki = honmeisatsu === '中央' ? null : DIRS[(DIRS.indexOf(honmeisatsu) + 4) % 8];
+  var yb2 = BRANCH_DIR[mod(year - 4, 12)], saiha = DIRS[(DIRS.indexOf(yb2) + 4) % 8];
+  var badMap = {};
+  function addBad(d, why) { if (!d) return; badMap[d] = badMap[d] || []; badMap[d].push(why); }
+  addBad(gohsatsu === '中央' ? null : gohsatsu, '五黄殺');
+  addBad(anken, '暗剣殺');
+  addBad(honmeisatsu === '中央' ? null : honmeisatsu, '本命殺');
+  addBad(teki, '本命的殺');
+  addBad(saiha, '歳破');
+  for (var i = 0; i < 8; i++) {
+    var d = DIRS[i], st = yb[d];
+    if (badMap[d]) { res.bad.push({ dir: d, star: KYUSEI[st], why: badMap[d].join('・') }); continue; }
+    if (st === k.honmei) continue;
+    /* elemRelation(a,b) の '相生' は a が b を生む。a=方位の星, b=本命星 */
+    var r = elemRelation(KYUSEI_ELEM[st], k.elem), why = null;
+    if (r === '相生') why = '本命星を生じる';
+    else if (r === '比和') why = '本命星と同じ五行';
+    else if (r === '被生') why = '本命星が生じる（洩れるが相生）';
+    if (st === k.getsu) why = (why ? why + '・' : '') + '月命星と同会';
+    if (why) res.good.push({ dir: d, star: KYUSEI[st], why: why });
+  }
+  return res;
+}
+/* 九星の 9 年サイクル (中宮=変化、坎=種まき… 収穫は離) */
+var KYUSEI_PHASE = { '中央':['変革期','立場が変わり、動きが大きくなる年'], '北':['種まき','水面下で準備する年'],
+ '北東':['変化','住まいや所属が動きやすい年'], '東':['始動','新しいことが音を立てて動く年'],
+ '南東':['整う','信用と縁が広がる年'], '南':['開花','成果と評価が表に出る年'],
+ '南西':['地固め','足元を固め、育てる年'], '西':['収穫','楽しみと実りを受け取る年'],
+ '北西':['完成','責任と決定を担う年'] };
+function kyuseiPhase(k, year) { var d = starDir(board(starOfYear(year)), k.honmei); return { dir: d, phase: KYUSEI_PHASE[d][0], text: KYUSEI_PHASE[d][1] }; }
+
+/* --- タロット -------------------------------------------------------------*/
+var MAJOR = ['愚者','魔術師','女教皇','女帝','皇帝','教皇','恋人','戦車','力','隠者','運命の輪','正義',
+             '吊るされた男','死神','節制','悪魔','塔','星','月','太陽','審判','世界'];
+var SUITS = [['ワンド', '火'], ['カップ', '水'], ['ソード', '風'], ['ペンタクル', '地']];
+var RANKS = ['エース','2','3','4','5','6','7','8','9','10','ペイジ','ナイト','クイーン','キング'];
+function fullDeck() {
+  var d = [];
+  for (var i = 0; i < 22; i++) d.push({ name: MAJOR[i], major: true, num: i, elem: null });
+  for (var s = 0; s < 4; s++) for (var r = 0; r < 14; r++)
+    d.push({ name: SUITS[s][0] + 'の' + RANKS[r], major: false, suit: SUITS[s][0], elem: SUITS[s][1], num: r + 1 });
+  return d;
+}
+function hash32(str) {                                        // xmur3
+  var h = 1779033703 ^ str.length;
+  for (var i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  return function () { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return (h ^= h >>> 16) >>> 0; };
+}
+function rng(seed) { var s = hash32(seed)(); return function () { s |= 0; s = s + 0x6D2B79F5 | 0;
+  var t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function drawSpread(seed, n) {                                // 決定論的シャッフル: 同じ入力なら同じ札
+  var d = fullDeck(), r = rng(seed);
+  for (var i = d.length - 1; i > 0; i--) { var j = Math.floor(r() * (i + 1)); var t = d[i]; d[i] = d[j]; d[j] = t; }
+  var out = [];
+  for (var k = 0; k < n; k++) { var c = d[k]; out.push({ card: c, reversed: r() < 0.35 }); }
+  return out;
+}
+function birthCard(y, m, d) {
+  var n = digitSum(y) + m + d;
+  while (n > 22) n = digitSum(n);
+  var soul = n; while (soul > 9) soul = digitSum(soul);
+  return { card: MAJOR[n % 22], num: n % 22, soulCard: MAJOR[soul], soulNum: soul };
+}
+function yearCard(y, m, d, year) {
+  var n = m + d + digitSum(year);
+  while (n > 22) n = digitSum(n);
+  return { card: MAJOR[n % 22], num: n % 22 };
+}
+
+/* --- 血液型 (統計的裏づけのない文化的レイヤーとして最小の重みで扱う) -----*/
+var BLOOD = {
+  A: { name: 'A型', traits: '几帳面・配慮型・段取り重視', drives: { 6: 1, 4: 0.6, 2: 0.4 } },
+  B: { name: 'B型', traits: 'マイペース・興味駆動・発想型', drives: { 5: 1, 9: 0.6, 3: 0.4 } },
+  O: { name: 'O型', traits: '目的志向・おおらか・現実的', drives: { 1: 1, 10: 0.6, 2: 0.4 } },
+  AB:{ name: 'AB型', traits: '二面性・分析と情緒の同居', drives: { 8: 1, 11: 0.6, 12: 0.4 } }
+};
+
+/* ============================================================================
+ * §9 統合レイヤー
+ *
+ * 各流派の出力を「12 の動機軸(ドライブ)」という共通のベクトル空間に写像し、
+ * 重み付き平均で統合する。単なる併記ではなく、
+ *   ・どの軸で流派が一致しているか (合議)
+ *   ・どの軸で食い違っているか (対立)
+ * を明示できるのがこの設計の要点。
+ * ==========================================================================*/
+var DRIVES = [
+ { id:1,  name:'開拓・自我',   short:'開拓', text:'自分で決めて自分で始める。先頭に立つと力が出る。' },
+ { id:2,  name:'安定・所有',   short:'安定', text:'手ざわりのある確かさ。積み上げと維持で安心を作る。' },
+ { id:3,  name:'知性・伝達',   short:'知性', text:'知って、つないで、伝える。情報が動くところに居場所がある。' },
+ { id:4,  name:'情緒・基盤',   short:'情緒', text:'安心できる場所と、心の通う関係。内側から支える力。' },
+ { id:5,  name:'創造・表現',   short:'表現', text:'自分から出てくるものを形にする。遊びと創作が原動力。' },
+ { id:6,  name:'実務・健康',   short:'実務', text:'手順を整え、役に立つ。日々の運用そのものが才能。' },
+ { id:7,  name:'関係・調和',   short:'調和', text:'一対一の関係のなかで力が出る。バランスをとる感覚。' },
+ { id:8,  name:'探究・変容',   short:'探究', text:'深く掘り、一度こわして作り直す。本質にしか興味がない。' },
+ { id:9,  name:'理想・拡大',   short:'理想', text:'遠くを見て、枠を広げる。意味と信念で動く。' },
+ { id:10, name:'達成・社会',   short:'達成', text:'目に見える結果と立場。責任を持つほど強くなる。' },
+ { id:11, name:'共同体・革新', short:'革新', text:'仲間とネットワーク。前例より「これから」を選ぶ。' },
+ { id:12, name:'超越・霊性',   short:'超越', text:'境界を溶かす。個を超えたものとつながる感覚。' }
+];
+function zeroVec() { var v = {}; for (var i = 1; i <= 12; i++) v[i] = 0; return v; }
+function addVec(v, id, w) { if (v[id] !== undefined) v[id] += w; }
+function normVec(v) {
+  var t = 0; for (var k in v) t += v[k];
+  var o = {}; for (var j in v) o[j] = t ? v[j] / t : 0;
+  return o;
+}
+/* 十神 → ドライブ */
+var TENGOD_DRIVE = {
+  '比肩': [[1,1.0],[11,0.3]], '劫財': [[1,0.7],[11,0.6]],
+  '食神': [[5,1.0],[4,0.3]],  '傷官': [[5,0.8],[3,0.6]],
+  '偏財': [[2,0.7],[9,0.6]],  '正財': [[2,1.0],[6,0.4]],
+  '偏官': [[10,0.7],[8,0.6]], '正官': [[10,1.0],[6,0.4]],
+  '偏印': [[8,0.8],[12,0.5]], '印綬': [[4,0.7],[3,0.6]]
+};
+var SHUSEI_DRIVE = {
+  '貫索星':'比肩','石門星':'劫財','鳳閣星':'食神','調舒星':'傷官','禄存星':'偏財',
+  '司禄星':'正財','車騎星':'偏官','牽牛星':'正官','龍高星':'偏印','玉堂星':'印綬'
+};
+var ZW_DRIVE = {
+  '紫微':[[10,1.0],[1,0.3]], '天機':[[3,1.0],[9,0.3]], '太陽':[[9,0.8],[1,0.6]],
+  '武曲':[[2,0.8],[10,0.6]], '天同':[[4,0.9],[7,0.5]], '廉貞':[[8,0.8],[5,0.4]],
+  '天府':[[2,0.9],[6,0.5]],  '太陰':[[4,0.9],[12,0.4]],'貪狼':[[5,0.9],[8,0.5]],
+  '巨門':[[3,0.9],[8,0.4]],  '天相':[[7,0.9],[6,0.5]], '天梁':[[12,0.7],[9,0.6]],
+  '七殺':[[1,0.9],[10,0.5]], '破軍':[[11,0.8],[5,0.5]]
+};
+var LP_DRIVE = { 1:1, 2:7, 3:5, 4:6, 5:9, 6:4, 7:8, 8:10, 9:12, 11:12, 22:10, 33:7 };
+var KYUSEI_DRIVE = { 1:8, 2:6, 3:3, 4:7, 5:1, 6:10, 7:5, 8:2, 9:9 };
+var MAJOR_DRIVE = { 0:9, 1:3, 2:12, 3:5, 4:10, 5:6, 6:7, 7:1, 8:1, 9:8, 10:9, 11:7,
+                    12:12, 13:8, 14:6, 15:2, 16:11, 17:9, 18:12, 19:5, 20:11, 21:10 };
+var MAJOR_TEXT = {
+ 0:'始まりと自由。地図を持たずに歩き出せる人。', 1:'意志と技術。手持ちの道具で何かを起こす人。',
+ 2:'静かな知。見えないものを正確に受け取る人。', 3:'豊かさと育成。与えることで増やす人。',
+ 4:'秩序と支配。枠を作って守る人。', 5:'伝統と教え。橋渡しをして意味を渡す人。',
+ 6:'選択と結びつき。心で選ぶ人。', 7:'前進と制御。相反する力を御して進む人。',
+ 8:'内なる力。焦らず飼いならす人。', 9:'探索と孤独。自分の灯りで奥へ行く人。',
+ 10:'転機と循環。流れが変わる場所に立つ人。', 11:'均衡と決断。事実で切り分ける人。',
+ 12:'転換と受容。逆さから見ることで抜ける人。', 13:'終わりと再生。手放すことで進む人。',
+ 14:'調合と中庸。異なるものを混ぜて新しくする人。', 15:'執着と現実。欲を燃料にできる人。',
+ 16:'破壊と解放。壊れた先にしかない道を行く人。', 17:'希望と展望。遠い光を信じられる人。',
+ 18:'夢と不安。境界のあいまいな領域を扱う人。', 19:'成功と生命力。表に出るほど強い人。',
+ 20:'覚醒と再評価。過去を呼び戻して結び直す人。', 21:'完成と統合。ひと回りを終わらせる人。'
+};
+var BLOOD_TEXT = BLOOD;
+
+/* 各流派を 12 軸ベクトルに写像 */
+function driveVectors(ctx) {
+  var out = [];
+  /* --- 四柱推命: 全ての干(蔵干含む)の十神を重み付きで --- */
+  var v1 = zeroVec(), d = ctx.pillars.day.stem, keys = ['year','month','day','hour'],
+      bw = { year:1.0, month:1.6, day:1.2, hour:1.0 };
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i]; if (k === 'hour' && !ctx.pillars.hasHour) continue;
+    var pl = ctx.pillars[k];
+    if (k !== 'day') { var t = TENGOD[tenGod(d, pl.stem)];
+      TENGOD_DRIVE[t].forEach(function (x) { addVec(v1, x[0], x[1] * bw[k]); }); }
+    HIDDEN[pl.branch].forEach(function (h) {
+      var tg = TENGOD[tenGod(d, h[0])];
+      TENGOD_DRIVE[tg].forEach(function (x) { addVec(v1, x[0], x[1] * bw[k] * h[1] / 100); });
+    });
+  }
+  out.push({ system: '四柱推命', weight: 1.0, vec: normVec(v1) });
+  /* --- 算命学: 人体星図の五主星 --- */
+  var v2 = zeroVec(), body = ctx.sanmei.body, bpos = ['head','chest','belly','left','right'],
+      bwt = { head:1.3, chest:1.5, belly:1.0, left:1.0, right:1.0 };
+  bpos.forEach(function (p) {
+    var tg = SHUSEI_DRIVE[body[p].star];
+    TENGOD_DRIVE[tg].forEach(function (x) { addVec(v2, x[0], x[1] * bwt[p]); });
+  });
+  out.push({ system: '算命学', weight: 0.8, vec: normVec(v2) });
+  /* --- 紫微斗数: 命宮・身宮・官禄宮・福徳宮の主星 --- */
+  var v3 = zeroVec(), zw = ctx.ziwei, palW = { '命宮':1.6, '官禄宮':1.0, '福徳宮':0.8, '遷移宮':0.6 };
+  zw.palaces.forEach(function (p) {
+    var w = palW[p.name] || 0; if (p.isBody) w += 0.8;
+    if (!w) return;
+    var src = p.majors.length ? p.majors : zw.palaces.filter(function (q) { return q.branch === p.opposite; })[0].majors;
+    src.forEach(function (s) {
+      (ZW_DRIVE[s.name] || []).forEach(function (x) { addVec(v3, x[0], x[1] * w * (0.6 + s.brightVal / 8)); });
+    });
+  });
+  out.push({ system: '紫微斗数', weight: 0.9, vec: normVec(v3) });
+  /* --- 西洋占星術: 天体のサイン(=軸)とハウス --- */
+  var v4 = zeroVec(), w4 = ctx.western;
+  w4.bodies.forEach(function (b2) {
+    addVec(v4, b2.sign + 1, b2.weight * 0.8);
+    if (b2.house) addVec(v4, b2.house, b2.weight * 1.0);
+  });
+  if (ctx.birth.hasHour) { addVec(v4, signOf(w4.houses.asc) + 1, 2.5); addVec(v4, signOf(w4.houses.mc) + 1, 1.5); }
+  out.push({ system: '西洋占星術', weight: 1.0, vec: normVec(v4) });
+  /* --- インド占星術: 月のラーシと太陽のラーシ --- */
+  var v5 = zeroVec();
+  addVec(v5, Math.floor(ctx.vedic.moonSid / 30) + 1, 2.0);
+  addVec(v5, Math.floor(ctx.vedic.sunSid / 30) + 1, 1.0);
+  out.push({ system: 'インド占星術', weight: 0.5, vec: normVec(v5) });
+  /* --- 数秘術 --- */
+  var v6 = zeroVec(), nu = ctx.numerology;
+  addVec(v6, LP_DRIVE[nu.lifePath], 2.0);
+  addVec(v6, LP_DRIVE[reduceNum(nu.birthday)] || 1, 0.8);
+  if (nu.destiny) addVec(v6, LP_DRIVE[nu.destiny], 1.0);
+  if (nu.soul) addVec(v6, LP_DRIVE[nu.soul], 0.6);
+  out.push({ system: '数秘術', weight: 0.6, vec: normVec(v6) });
+  /* --- 九星気学 --- */
+  var v7 = zeroVec();
+  addVec(v7, KYUSEI_DRIVE[ctx.kigaku.honmei], 2.0);
+  addVec(v7, KYUSEI_DRIVE[ctx.kigaku.getsu], 1.2);
+  addVec(v7, KYUSEI_DRIVE[ctx.kigaku.keisha], 0.8);
+  out.push({ system: '九星気学', weight: 0.5, vec: normVec(v7) });
+  /* --- タロット --- */
+  var v8 = zeroVec();
+  addVec(v8, MAJOR_DRIVE[ctx.tarot.birth.num], 2.0);
+  addVec(v8, MAJOR_DRIVE[ctx.tarot.birth.soulNum], 1.0);
+  out.push({ system: 'タロット', weight: 0.4, vec: normVec(v8) });
+  /* --- 血液型 (最小の重み) --- */
+  if (ctx.birth.blood && BLOOD[ctx.birth.blood]) {
+    var v9 = zeroVec(), bd = BLOOD[ctx.birth.blood].drives;
+    for (var kk in bd) addVec(v9, +kk, bd[kk]);
+    out.push({ system: '血液型', weight: 0.15, vec: normVec(v9) });
+  }
+  return out;
+}
+/* 合議 — 統合ベクトルと、軸ごとの一致度 */
+function consensus(vectors) {
+  var total = zeroVec(), wsum = 0;
+  vectors.forEach(function (v) { wsum += v.weight; for (var k in v.vec) total[k] += v.vec[k] * v.weight; });
+  for (var k2 in total) total[k2] /= wsum;
+  /* 各流派の上位3軸を数える */
+  var votes = zeroVec(), voters = {};
+  vectors.forEach(function (v) {
+    var top = Object.keys(v.vec).sort(function (a, b) { return v.vec[b] - v.vec[a]; }).slice(0, 3);
+    top.forEach(function (t) { votes[t] += 1; (voters[t] = voters[t] || []).push(v.system); });
+  });
+  var rows = DRIVES.map(function (dr) {
+    return { drive: dr, value: total[dr.id], pct: total[dr.id] * 100,
+             votes: votes[dr.id], voters: voters[dr.id] || [],
+             agreement: votes[dr.id] / vectors.length };
+  }).sort(function (a, b) { return b.value - a.value; });
+  /* 対立: 主要流派のあいだで割れている軸だけを拾う。
+     単点しか持たない流派 (数秘・タロット等) は必ず尖るので対象外にする */
+  var conflicts = [], heavy = vectors.filter(function (v) { return v.weight >= 0.8; });
+  DRIVES.forEach(function (dr) {
+    var vals = heavy.map(function (v) { return { s: v.system, x: v.vec[dr.id] }; });
+    var mx = vals.reduce(function (a, b) { return b.x > a.x ? b : a; });
+    var mean = vals.reduce(function (a, b) { return a + b.x; }, 0) / vals.length;
+    if (mx.x > 0.22 && mean < mx.x * 0.45)
+      conflicts.push({ drive: dr, system: mx.s, value: mx.x,
+        text: mx.s + 'だけが「' + dr.short + '」を強く出し、他の主要流派では目立たない。場面によって出たり隠れたりする面。' });
+  });
+  return { rows: rows, top: rows.slice(0, 4), bottom: rows.slice(-3).reverse(), conflicts: conflicts, vectors: vectors };
+}
+/* 五行と四元素 */
+var ELEM2WEST = { 0:'風', 1:'火', 2:'地', 3:'地', 4:'水' };
+function temperament(ctx) {
+  var go = [0,0,0,0,0], st = ctx.strength;
+  for (var i = 0; i < 5; i++) go[i] += st.balance.pct[i] * 3;
+  go[ctx.kigaku.elem] += 20;
+  go[nayin(ctx.pillars.day.stem, ctx.pillars.day.branch).elem] += 10;
+  go[ZW_KYOKU_ELEM(ctx.ziwei.kyoku)] += 10;
+  var gt = go.reduce(function (a, b) { return a + b; }, 0);
+  var west = { 火:0, 地:0, 風:0, 水:0 };
+  for (var k in ctx.western.elements) west[k] += ctx.western.elements[k] * 3;
+  west[SIGN_ELEM[Math.floor(ctx.vedic.moonSid / 30)]] += 4;
+  var wt = 0; for (var k2 in west) wt += west[k2];
+  return {
+    gogyo: go.map(function (x, i) { return { name: ELEM[i], pct: gt ? x / gt * 100 : 0 }; }),
+    west: Object.keys(west).map(function (k3) { return { name: k3, pct: wt ? west[k3] / wt * 100 : 0 }; }),
+    strongest: ELEM[go.indexOf(Math.max.apply(null, go))],
+    weakest: ELEM[go.indexOf(Math.min.apply(null, go))]
+  };
+}
+function ZW_KYOKU_ELEM(name) { return { '水二局':4, '木三局':0, '金四局':3, '土五局':2, '火六局':1 }[name]; }
+
+/* ============================================================================
+ * §10 運命サイクル — 周期の違う複数の暦を重ね合わせて 1 本の曲線にする
+ *
+ *   大運 10年 / 流年 12年 / 天中殺 12年 / 九星 9年 / パーソナルイヤー 9年
+ *   紫微大限 10年 / ヴィムショッタリ・ダシャー 6〜20年 / 木星 11.86年 / 土星 29.5年
+ * 位相も長さも違う波を重ねるので、合成カーブは単純な繰り返しにはならない。
+ * ==========================================================================*/
+var CYCLE_W = { daiun:1.0, ryunen:0.9, tenchu:0.7, kyusei:0.7, numer:0.5, ziwei:0.8, dasha:0.5, transit:0.5 };
+var KYUSEI_SCORE = { '北':-10, '北東':0, '東':25, '南東':40, '南':45, '南西':15, '西':30, '北西':18, '中央':-5 };
+var PY_SCORE = { 1:20, 2:5, 3:30, 4:5, 5:15, 6:10, 7:-10, 8:35, 9:-15 };
+var DASHA_SCORE = { '木星':25, '金星':20, '水星':10, '月':10, '太陽':5, '火星':-5, '土星':-15, 'ラーフ':-10, 'ケートゥ':-10 };
+
+function elemFavorScore(elem, st) {
+  if (st.favor.indexOf(elem) >= 0) return 1;
+  if (st.avoid.indexOf(elem) >= 0) return -1;
+  return 0;
+}
+/* ある年 (立春基準) の各成分 */
+function yearComponents(ctx, year) {
+  var p = ctx.pillars, st = ctx.strength, out = [];
+  var age = year - p.solarYear;
+  /* 大運 */
+  var du = null;
+  for (var i = 0; i < ctx.daiun.list.length; i++) {
+    var L = ctx.daiun.list[i];
+    if (age >= L.from && age < L.to) { du = L; break; }
+  }
+  if (du) {
+    var sc = (elemFavorScore(STEM_ELEM[du.pillar.stem], st) * 0.55 +
+              elemFavorScore(BRANCH_ELEM[du.pillar.branch], st) * 0.45) * 55;
+    out.push({ key: 'daiun', label: '大運 ' + du.pillar.name + '（' + du.tenGod + '・' + du.stage + '）',
+               score: sc, w: CYCLE_W.daiun, detail: '10年単位の土台。用神' + st.favorNames.join('') + 'に対して' + (sc > 8 ? '追い風' : sc < -8 ? '向かい風' : '中立') });
+  } else {
+    out.push({ key: 'daiun', label: '大運（立運前）', score: 0, w: CYCLE_W.daiun, detail: '立運前は月柱の影響下' });
+  }
+  /* 流年 */
+  var ap = annualPillar(year);
+  var tg = TENGOD[tenGod(p.day.stem, ap.stem)];
+  var rs = (elemFavorScore(STEM_ELEM[ap.stem], st) * 0.5 + elemFavorScore(BRANCH_ELEM[ap.branch], st) * 0.5) * 30;
+  var rels = branchRelations(ap.branch, p.day.branch).concat(branchRelations(ap.branch, p.month.branch));
+  var relScore = 0, relText = [];
+  rels.forEach(function (r) { relScore += r.score * 3; relText.push(r.label); });
+  out.push({ key: 'ryunen', label: '流年 ' + ap.name + '（' + tg + '）', score: rs + relScore, w: CYCLE_W.ryunen,
+             detail: relText.length ? relText.join('・') : '命式との強い干渉なし' });
+  /* 天中殺 */
+  var tc = isTenchu(p, year);
+  out.push({ key: 'tenchu', label: tc ? '天中殺（' + ctx.sanmei.tenchusatsu.day + '）' : '天中殺ではない年',
+             score: tc ? -30 : 4, w: CYCLE_W.tenchu,
+             detail: tc ? '結果を求めず、仕込みと整理に使うと後で効く 2 年' : '' });
+  /* 九星 */
+  var kp = kyuseiPhase(ctx.kigaku, year);
+  out.push({ key: 'kyusei', label: '九星 ' + kp.dir + '（' + kp.phase + '）', score: KYUSEI_SCORE[kp.dir], w: CYCLE_W.kyusei, detail: kp.text });
+  /* 数秘 */
+  var py = ctx.numerology.personalYear(year);
+  out.push({ key: 'numer', label: 'パーソナルイヤー ' + py + '（' + PY_THEME[py] + '）', score: PY_SCORE[py], w: CYCLE_W.numer, detail: '' });
+  /* 紫微大限 */
+  var lim = null;
+  for (var j = 0; j < ctx.ziwei.limits.length; j++) { var L2 = ctx.ziwei.limits[j]; if (age >= L2.from && age <= L2.to) { lim = L2; break; } }
+  if (lim) {
+    var pal = ctx.ziwei.palaces.filter(function (x) { return x.name === lim.palace; })[0];
+    var bs = 0, hs = 0;
+    pal.majors.forEach(function (m) { bs += (m.brightVal - 2) * 12; });
+    pal.stars.forEach(function (m) { if (m.hua === '禄') hs += 15; if (m.hua === '権') hs += 10; if (m.hua === '科') hs += 6; if (m.hua === '忌') hs -= 15; });
+    if (!pal.majors.length) bs = -6;
+    out.push({ key: 'ziwei', label: '大限 ' + lim.palace + '（' + lim.branchName + '）' + (lim.majors.join('') || '空宮'),
+               score: Math.max(-50, Math.min(50, bs + hs)), w: CYCLE_W.ziwei, detail: pal.name + 'に 10 年の焦点が移る' });
+  }
+  /* ダシャー */
+  var da = null;
+  for (var q = 0; q < ctx.vedic.dasha.length; q++) { var D = ctx.vedic.dasha[q]; if (age >= D.from && age < D.to) { da = D; break; } }
+  if (da) out.push({ key: 'dasha', label: 'ダシャー ' + da.lord + '期', score: DASHA_SCORE[da.lord], w: CYCLE_W.dasha,
+                     detail: Math.round(da.from) + '〜' + Math.round(da.to) + '歳' });
+  /* トランジット */
+  var tr = [], ts = 0;
+  var jr = age % 11.862;
+  if (jr < 0.6 || jr > 11.2) { ts += 22; tr.push('木星回帰（拡大と好機）'); }
+  if (Math.abs(age - 29.5) < 0.8 || Math.abs(age - 58.9) < 0.8) { ts -= 12; tr.push('土星回帰（構造の作り直し）'); }
+  if (Math.abs(age - 14.7) < 0.7 || Math.abs(age - 44.2) < 0.7) { ts -= 8; tr.push('土星オポジション（限界の確認）'); }
+  if (Math.abs(age - 42) < 0.8) { ts -= 6; tr.push('天王星オポジション（人生の中間点）'); }
+  if (Math.abs(age - 84) < 1) { tr.push('天王星回帰'); }
+  out.push({ key: 'transit', label: tr.length ? tr.join(' / ') : 'ハードな回帰なし', score: ts, w: CYCLE_W.transit, detail: '' });
+  return { age: age, components: out };
+}
+function yearScore(ctx, year) {
+  var c = yearComponents(ctx, year), s = 0, w = 0;
+  c.components.forEach(function (x) { s += x.score * x.w; w += x.w; });
+  var raw = s / w;
+  return { year: year, age: c.age, score: Math.max(-100, Math.min(100, raw * 1.6)), components: c.components };
+}
+/* 人生年表 */
+function lifeTimeline(ctx, fromAge, toAge) {
+  var out = [];
+  for (var a = fromAge; a <= toAge; a++) {
+    var y = ctx.pillars.solarYear + a;
+    var r = yearScore(ctx, y);
+    out.push({ age: a, year: y, score: r.score, components: r.components });
+  }
+  /* 節目を拾う */
+  var marks = [];
+  ctx.daiun.list.forEach(function (L) { if (L.from >= fromAge && L.from <= toAge) marks.push({ age: Math.round(L.from), type: '大運', text: '大運 ' + L.pillar.name + ' に入る（' + L.tenGod + '）' }); });
+  ctx.ziwei.limits.forEach(function (L) { if (L.from >= fromAge && L.from <= toAge) marks.push({ age: L.from, type: '大限', text: '大限が' + L.palace + 'へ' }); });
+  ctx.vedic.dasha.forEach(function (D) { if (D.from >= fromAge && D.from <= toAge && D.from > 0) marks.push({ age: Math.round(D.from), type: 'ダシャー', text: D.lord + '期に入る' }); });
+  for (var a2 = fromAge; a2 <= toAge; a2++) {
+    var yy = ctx.pillars.solarYear + a2;
+    if (isTenchu(ctx.pillars, yy) && !isTenchu(ctx.pillars, yy - 1)) marks.push({ age: a2, type: '天中殺', text: '天中殺に入る（2年間）' });
+  }
+  [29, 30, 59, 60].forEach(function (a3) { if (a3 >= fromAge && a3 <= toAge && (a3 === 29 || a3 === 59)) marks.push({ age: a3, type: '土星', text: '土星回帰' }); });
+  marks.sort(function (x, y2) { return x.age - y2.age; });
+  /* 山と谷 */
+  var sorted = out.slice().sort(function (x, y3) { return y3.score - x.score; });
+  return { series: out, marks: marks, peaks: sorted.slice(0, 5), valleys: sorted.slice(-5).reverse() };
+}
+/* 月別 (未来シミュレーター) */
+function monthScores(ctx, year) {
+  var base = yearScore(ctx, year), out = [];
+  var terms = majorTerms(year);
+  for (var mo = 0; mo < 12; mo++) {
+    var mb = mod(2 + mo, 12), yst = mod(year - 4, 10);
+    var ms = mod((yst % 5) * 2 + 2 + mo, 10);
+    var s = (elemFavorScore(STEM_ELEM[ms], ctx.strength) * 0.5 + elemFavorScore(BRANCH_ELEM[mb], ctx.strength) * 0.5) * 30;
+    branchRelations(mb, ctx.pillars.day.branch).forEach(function (r) { s += r.score * 3; });
+    var pm = ctx.numerology.personalMonth(year, mo + 1);
+    s += (PY_SCORE[pm] || 0) * 0.35;
+    var mstar = monthStar(starOfYear(year), mo);
+    var mdir = starDir(board(mstar), ctx.kigaku.honmei);
+    s += KYUSEI_SCORE[mdir] * 0.35;
+    var tc = ctx.pillars.kubou.indexOf(mb) >= 0;
+    if (tc) s -= 18;
+    var f = fromJD(terms[mo].jd + ctx.birth.tz / 24);
+    out.push({ order: mo, branch: BRANCH[mb], pillar: STEM[ms] + BRANCH[mb],
+      short: f.m + '/' + f.d,
+      label: f.y + '/' + f.m + '/' + f.d + ' ' + terms[mo].name + '〜',
+      score: Math.max(-100, Math.min(100, base.score * 0.55 + s * 1.1)),
+      kuubou: tc, kyusei: mdir, personalMonth: pm });
+  }
+  return { year: year, base: base, months: out };
+}
+
+/* ============================================================================
+ * §11 解釈テキスト — 各流派の記号に対応する短い説明
+ * ==========================================================================*/
+var TEXT_TENGOD = {
+ '比肩':'自立。人に合わせるより自分の間合いで動く。','劫財':'仲間と競争。人を巻き込む力と、分け合う力。',
+ '食神':'のびやかな表現。楽しむことがそのまま出力になる。','傷官':'鋭い感性と批評眼。こだわりが作品になる。',
+ '偏財':'流通する才覚。人・物・金を回して増やす。','正財':'堅実な蓄積。約束と管理に強い。',
+ '偏官':'瞬発力と決断。修羅場で本領を出す。','正官':'規律と責任。役職と信用がよく似合う。',
+ '偏印':'独自の学び方。既存の枠を借りずに知を組み立てる。','印綬':'受け継ぐ知性。学び、守り、教える。'
+};
+var TEXT_SHUSEI = {
+ '貫索星':'ひとりで守り抜く。芯が強く、他人に決められるのを嫌う。','石門星':'和のなかの強さ。人を集めて組織にする。',
+ '鳳閣星':'自然体の表現。遊びと味わいのセンス。','調舒星':'繊細な感受性。孤独と表現が結びつく。',
+ '禄存星':'与えて回す愛情。奉仕とサービスの星。','司禄星':'こつこつ貯める。家庭と日常を積む。',
+ '車騎星':'まっすぐな行動力。走りながら考える。','牽牛星':'名誉と責任。きちんとした立場が似合う。',
+ '龍高星':'冒険と独学。未知に飛び込んで身につける。','玉堂星':'学問と伝承。理屈で世界を整える。'
+};
+var TEXT_JUSEI = {
+ '天報':'変化のエネルギー。器用で、一つに定まらない。','天印':'素直で愛される。人に助けられて進む。',
+ '天貴':'純粋でまじめ。育てられて伸びる。','天恍':'夢とロマン。ここではないどこかに惹かれる。',
+ '天南':'若い突進力。勢いで壁を越える。','天禄':'安定した働き。持続力がある。',
+ '天将':'最大の実行力。責任を背負うほど強い。','天堂':'成熟した知恵。落ち着いて導く。',
+ '天胡':'内向と繊細。療養・研究・空想の世界。','天極':'一度こわれて生まれ直す。極端な体験。',
+ '天庫':'蓄積と探究。集める・まとめる・受け継ぐ。','天馳':'限界を超える瞬発力。ここぞで燃える。'
+};
+var TEXT_ZW = {
+ '紫微':'帝王星。中心に置かれると力を出す。補佐がいるほど強い。','天機':'知恵と企画。動きながら考える参謀。',
+ '太陽':'与える光。表に出て人を照らす。','武曲':'財と実行。現実的で決断が早い。',
+ '天同':'福の星。争わず、楽しみながら整える。','廉貞':'情熱と変転。極端に振れながら磨かれる。',
+ '天府':'蓄えの星。守り、貯め、安定させる。','太陰':'内向の豊かさ。感受性と資産、母性。',
+ '貪狼':'欲望と多才。好奇心が広く、交際上手。','巨門':'言葉の星。議論・探索・疑いの力。',
+ '天相':'補佐と調整。人と人の間に立つ。','天梁':'長老の星。庇護し、解決し、超然とする。',
+ '七殺':'開拓と勝負。独力で切り開く。','破軍':'破壊と創造。古い枠を壊して作り直す。'
+};
+var TEXT_PLANET = {
+ '太陽':'人生の主題と、意識的に目指す方向。','月':'素の反応と、安心のありか。',
+ '水星':'考え方と伝え方。','金星':'好きなもの、惹かれ方、価値観。',
+ '火星':'行動の起こし方と怒り方。','木星':'広がる場所、幸運の入り口。',
+ '土星':'課題と責任、時間をかけて形になるもの。','天王星':'変革と自由の方向。',
+ '海王星':'夢と溶解、境界のあいまいさ。','冥王星':'避けられない変容のテーマ。'
+};
+var TEXT_SIGN = {
+ '牡羊座':'即断即決、まず動く','牡牛座':'五感と持続、確かなもの','双子座':'情報と軽やかさ','蟹座':'情緒と守り',
+ '獅子座':'自己表現と誇り','乙女座':'分析と実務','天秤座':'均衡と関係','蠍座':'深度と一体化',
+ '射手座':'探求と拡張','山羊座':'責任と達成','水瓶座':'独立と革新','魚座':'共感と融解'
+};
+var TEXT_HOUSE = ['自分自身と体','所有と才能','学びと近い関係','家と土台','創造と恋愛','仕事と健康',
+ 'パートナーシップ','共有と継承','遠方と信念','社会的達成','仲間と未来','秘密と手放し'];
+var TEXT_KYUSEI = {
+ 1:'水のように状況に合わせて形を変える。裏方と交渉に強い。',
+ 2:'土のように受け止め、育てる。補佐と継続の星。',
+ 3:'雷のように音を立てて始める。若さと発信。',
+ 4:'風のように広く行き渡る。信用と縁を運ぶ。',
+ 5:'中心にして極端。壊すことも育てることもする帝王の星。',
+ 6:'天のように決める。責任・権威・完成。',
+ 7:'金のように華やか。喜びと会話、収穫。',
+ 8:'山のように動かず、そして変わる。継承と転換。',
+ 9:'火のように明るく照らす。名誉・美・見抜く力。'
+};
+
+/* ============================================================================
+ * §12 人間関係アルゴリズム — 二人の命式を突き合わせる
+ * ==========================================================================*/
+function pairElemScore(a, b) {
+  var r = elemRelation(a, b);
+  return { '比和': 72, '相生': 86, '被生': 82, '相剋': 44, '被剋': 40 }[r];
+}
+function branchPairScore(a, b) {
+  var rels = branchRelations(a, b), s = 62, why = [];
+  rels.forEach(function (r) {
+    if (r.type === '六合') { s = Math.max(s, 94); why.push('支合'); }
+    else if (r.type === '半会') { s = Math.max(s, 86); why.push('半会'); }
+    else if (r.type === '冲') { s = Math.min(s, 38); why.push('冲'); }
+    else if (r.type === '刑') { s = Math.min(s, 44); why.push('刑'); }
+    else if (r.type === '害') { s = Math.min(s, 48); why.push('害'); }
+    else if (r.type === '破') { s = Math.min(s, 52); why.push('破'); }
+  });
+  if (a === b) { s = Math.max(s, 74); why.push('同じ支'); }
+  return { score: s, why: why.length ? why.join('・') : '干渉なし' };
+}
+function synastry(A, B) {
+  var keys = ['sun', 'moon', 'venus', 'mars'], out = [], s = 0, n = 0;
+  function get(w, k) { return w.bodies.filter(function (x) { return x.key === k; })[0]; }
+  for (var i = 0; i < keys.length; i++) for (var j = 0; j < keys.length; j++) {
+    var pa = get(A.western, keys[i]), pb = get(B.western, keys[j]);
+    var diff = Math.abs(mod(pa.lon - pb.lon + 180, 360) - 180);
+    for (var a = 0; a < ASPECTS.length; a++) {
+      var AS = ASPECTS[a];
+      if (Math.abs(diff - AS.deg) <= AS.orb) {
+        var val = AS.name === '合' ? 12 : AS.score * 10;
+        if (AS.name === '合' && (keys[i] === 'mars' || keys[j] === 'mars')) val = 6;
+        out.push({ text: 'A' + pa.name + ' ' + AS.name + ' B' + pb.name, val: val });
+        s += val; n++;
+        break;
+      }
+    }
+  }
+  var raw = n ? 62 + s / Math.max(3, n) * 1.6 : 60;
+  return { score: Math.max(20, Math.min(96, raw)), items: out.sort(function (x, y) { return Math.abs(y.val) - Math.abs(x.val); }).slice(0, 8) };
+}
+function compatibility(A, B) {
+  var pa = A.pillars, pb = B.pillars;
+  var stemRel = elemRelation(STEM_ELEM[pa.day.stem], STEM_ELEM[pb.day.stem]);
+  var stemScore = pairElemScore(STEM_ELEM[pa.day.stem], STEM_ELEM[pb.day.stem]);
+  var sr = stemRelations(pa.day.stem, pb.day.stem), stemWhy = stemRel;
+  sr.forEach(function (r) { if (r.type === '干合') { stemScore = 96; stemWhy = '干合（引き合う）'; } });
+  var dayB = branchPairScore(pa.day.branch, pb.day.branch);
+  var yearB = branchPairScore(pa.year.branch, pb.year.branch);
+  var kg = pairElemScore(A.kigaku.elem, B.kigaku.elem);
+  if (A.kigaku.honmei === B.kigaku.getsu || B.kigaku.honmei === A.kigaku.getsu) kg = Math.min(96, kg + 8);
+  var lpDiff = Math.abs(A.numerology.lifePath - B.numerology.lifePath);
+  var num = [78, 70, 84, 62, 80, 58, 76, 60, 72][lpDiff % 9];
+  if (A.numerology.lifePath === B.numerology.lifePath) num = 80;
+  var syn = synastry(A, B);
+  var blood = 62;
+  if (A.birth.blood && B.birth.blood) {
+    var bt = { 'A-A':70,'A-B':55,'A-O':72,'A-AB':66,'B-B':68,'B-O':64,'B-AB':74,'O-O':72,'O-AB':60,'AB-AB':66 };
+    blood = bt[[A.birth.blood, B.birth.blood].sort().join('-')] || 62;
+  }
+  var tgAB = TENGOD[tenGod(pa.day.stem, pb.day.stem)], tgBA = TENGOD[tenGod(pb.day.stem, pa.day.stem)];
+  var parts = [
+    { name: '日干（核どうし）', score: stemScore, w: 1.4, why: stemWhy, note: 'A から見た B は「' + tgAB + '」、B から見た A は「' + tgBA + '」' },
+    { name: '日支（生活の距離感）', score: dayB.score, w: 1.3, why: dayB.why, note: BRANCH[pa.day.branch] + ' と ' + BRANCH[pb.day.branch] },
+    { name: '年支（外から見た並び）', score: yearB.score, w: 0.6, why: yearB.why, note: BRANCH[pa.year.branch] + ' と ' + BRANCH[pb.year.branch] },
+    { name: '九星気学', score: kg, w: 0.7, why: A.kigaku.honmeiName + ' と ' + B.kigaku.honmeiName, note: '' },
+    { name: '西洋シナストリー', score: syn.score, w: 1.2, why: syn.items.length + ' 個の主要アスペクト', note: syn.items.slice(0, 4).map(function (x) { return x.text; }).join(' / ') },
+    { name: '数秘術', score: num, w: 0.5, why: 'LP ' + A.numerology.lifePath + ' と ' + B.numerology.lifePath, note: '' },
+    { name: '血液型', score: blood, w: 0.15, why: (A.birth.blood || '-') + ' と ' + (B.birth.blood || '-'), note: '参考程度' }
+  ];
+  var s = 0, w = 0;
+  parts.forEach(function (p) { s += p.score * p.w; w += p.w; });
+  var total = Math.round(s / w);
+  /* 関係の型 */
+  var type, advice;
+  var driveA = A.consensus.rows[0].drive.id, driveB = B.consensus.rows[0].drive.id;
+  var same = driveA === driveB;
+  if (stemWhy === '干合（引き合う）') { type = '磁石型'; advice = '理屈より先に引き合う組み合わせ。惹かれる強さの分、境界線を言葉にしておくと長持ちする。'; }
+  else if (stemRel === '相生' || stemRel === '被生') { type = '循環型'; advice = '片方が与え、片方が受け取る流れができている。与える側が枯れないよう、感謝を可視化すること。'; }
+  else if (stemRel === '比和' && same) { type = '双子型'; advice = '見ている方向が似ている。楽だが刺激が減りやすい。役割を意図的に分けると伸びる。'; }
+  else if (dayB.why.indexOf('冲') >= 0) { type = '振幅型'; advice = 'ぶつかることで前に進むタイプ。喧嘩の後の修復手順を先に決めておくと強い。'; }
+  else if (stemRel === '相剋' || stemRel === '被剋') { type = '鍛錬型'; advice = '相手は自分の弱点を突いてくる。腹は立つが成長は速い。目的を共有すると摩擦が推進力に変わる。'; }
+  else { type = '並走型'; advice = '距離を保ったまま長く続く関係。定期的に接点を作らないと自然に離れる。'; }
+  return { total: total, parts: parts, type: type, advice: advice, synastry: syn,
+           label: total >= 82 ? '非常に良い' : total >= 70 ? '良い' : total >= 58 ? '普通' : total >= 46 ? '努力が要る' : '難しいが学びは大きい',
+           driveA: DRIVES[driveA - 1], driveB: DRIVES[driveB - 1] };
+}
+/* 二人にとって良い年 */
+function pairYears(A, B, fromYear, n) {
+  var out = [];
+  for (var i = 0; i < n; i++) {
+    var y = fromYear + i, a = yearScore(A, y).score, b = yearScore(B, y).score;
+    out.push({ year: y, a: a, b: b, both: (a + b) / 2 - Math.abs(a - b) * 0.25 });
+  }
+  return out;
+}
+
+/* ============================================================================
+ * §13 解析のエントリポイント
+ * ==========================================================================*/
+function normalizeInput(inp) {
+  var hasHour = inp.hasHour !== false;
+  var hour = hasHour ? (inp.hour || 0) : 12, minute = hasHour ? (inp.minute || 0) : 0;
+  var tz = inp.tz === undefined ? 9 : inp.tz;
+  return {
+    y: inp.y, m: inp.m, d: inp.d, hour: hour, minute: minute, hasHour: hasHour,
+    tz: tz, lat: inp.lat === undefined ? 35.6895 : inp.lat, lon: inp.lon === undefined ? 139.6917 : inp.lon,
+    place: inp.place || '', sex: inp.sex || 'male', blood: inp.blood || '', name: inp.name || '',
+    trueSolarTime: inp.trueSolarTime !== false, lateNightNextDay: inp.lateNightNextDay !== false,
+    houseSystem: inp.houseSystem || 'placidus',
+    jdUT: localToJD(inp.y, inp.m, inp.d, hour, minute, tz)
+  };
+}
+function analyze(inp) {
+  var b = normalizeInput(inp);
+  var ctx = { birth: b };
+  ctx.pillars = fourPillars(b);
+  ctx.detail = pillarDetail(ctx.pillars);
+  ctx.strength = strengthAnalysis(ctx.pillars);
+  ctx.daiun = majorFortune(ctx.pillars, b);
+  ctx.sanmei = sanmei(ctx.pillars);
+  ctx.lunar = lunarCalendar(b.jdUT, 8);
+  ctx.ziwei = ziwei(ctx.pillars, ctx.lunar, b);
+  ctx.western = western(b, b.houseSystem);
+  ctx.vedic = vedic(b);
+  ctx.numerology = numerology(b.y, b.m, b.d, b.name);
+  ctx.kigaku = kigaku(ctx.pillars, b.sex);
+  ctx.tarot = {
+    birth: birthCard(b.y, b.m, b.d),
+    seed: [b.y, b.m, b.d, b.hour, b.minute, b.name].join('|')
+  };
+  ctx.tarot.birthText = MAJOR_TEXT[ctx.tarot.birth.num];
+  ctx.vectors = driveVectors(ctx);
+  ctx.consensus = consensus(ctx.vectors);
+  ctx.temperament = temperament(ctx);
+  ctx.blueprint = soulBlueprint(ctx);
+  ctx.themes = lifeThemes(ctx);
+  return ctx;
+}
+/* --- 魂の設計図 -----------------------------------------------------------*/
+function soulBlueprint(ctx) {
+  var p = ctx.pillars, c = ctx.consensus, t = ctx.temperament;
+  var core = [
+    { system: '四柱推命', key: '日主 ' + STEM[p.day.stem] + '（' + ELEM[STEM_ELEM[p.day.stem]] + 'の' + (STEM_YIN[p.day.stem] ? '陰' : '陽') + '）',
+      text: DAY_MASTER[p.day.stem] },
+    { system: '算命学', key: '主星 ' + ctx.sanmei.mainStar, text: TEXT_SHUSEI[ctx.sanmei.mainStar] },
+    { system: '紫微斗数', key: '命宮 ' + ctx.ziwei.mingName + '・' + (ctx.ziwei.mingPalace.majors.map(function (x) { return x.name; }).join('') || '空宮'),
+      text: ctx.ziwei.mingPalace.majors.length ? TEXT_ZW[ctx.ziwei.mingPalace.majors[0].name]
+            : '主星のない命宮。対宮（' + BRANCH[ctx.ziwei.mingPalace.opposite] + '）を借りるため、環境や相手によって出方が大きく変わる。' },
+    { system: '西洋占星術', key: '太陽 ' + ctx.western.sunSign + '／月 ' + ctx.western.moonSign + (ctx.western.ascSign ? '／ASC ' + ctx.western.ascSign : ''),
+      text: '目指すのは' + TEXT_SIGN[ctx.western.sunSign] + '、安心するのは' + TEXT_SIGN[ctx.western.moonSign] + '。' },
+    { system: '数秘術', key: 'ライフパス ' + ctx.numerology.lifePath, text: ctx.numerology.lifePathText },
+    { system: '九星気学', key: ctx.kigaku.honmeiName + '（傾斜 ' + ctx.kigaku.keishaName + '）', text: TEXT_KYUSEI[ctx.kigaku.honmei] },
+    { system: 'タロット', key: '誕生カード ' + ctx.tarot.birth.card, text: ctx.tarot.birthText },
+    { system: 'インド占星術', key: ctx.vedic.nakshatra + '（' + ctx.vedic.shuku + '）', text: '月が生まれた星宿。感情の初期設定。' }
+  ];
+  if (ctx.birth.blood && BLOOD[ctx.birth.blood])
+    core.push({ system: '血液型', key: BLOOD[ctx.birth.blood].name, text: BLOOD[ctx.birth.blood].traits + '（統計的根拠のないレイヤーとして最小の重みで参照）' });
+  return {
+    core: core,
+    top: c.top, bottom: c.bottom, conflicts: c.conflicts,
+    temperament: t,
+    summary: '中心にあるのは「' + c.rows[0].drive.name + '」。' + c.rows[0].drive.text +
+             ' 次いで「' + c.rows[1].drive.short + '」「' + c.rows[2].drive.short + '」。' +
+             '五行では' + t.strongest + 'が厚く' + t.weakest + 'が薄い。' +
+             (c.rows[0].votes >= Math.max(2, Math.round(ctx.vectors.length * 0.4))
+               ? c.vectors.length + ' 流派中 ' + c.rows[0].votes + ' 流派が同じ方向を指している。'
+               : '流派の見立てはやや割れており、場面によって出る面が変わるタイプ。')
+  };
+}
+var DAY_MASTER = [
+ '大樹の木。まっすぐ伸び、曲がるのが苦手。信念で立つ。',
+ '草花の木。しなやかに絡んで伸びる。人と環境をうまく使う。',
+ '太陽の火。明るく開放的で、隠しごとが下手。存在そのものが照明。',
+ '灯火の火。近い相手を静かに温める。細やかで持続的。',
+ '山の土。動かない安定。頼られる器だが腰が重い。',
+ '田畑の土。育てる土。受け入れて実らせる。',
+ '鉱石の金。加工前の荒々しい強さ。義理と決断。',
+ '宝石の金。磨かれた繊細さと美意識。鋭い。',
+ '大海の水。量と勢い。飲み込み、運ぶ。',
+ '雨露の水。静かに浸透する。感受性と知性。'
+];
+/* --- 人生テーマ -----------------------------------------------------------*/
+function lifeThemes(ctx) {
+  var c = ctx.consensus, p = ctx.pillars, st = ctx.strength;
+  var top = c.rows[0], low = c.rows[c.rows.length - 1];
+  var themes = [];
+  themes.push({ title: '主題', body: '「' + top.drive.name + '」を軸に人生が組み立てられている。' + top.drive.text +
+    '（' + top.voters.join('・') + ' が一致）' });
+  themes.push({ title: '副主題', body: '「' + c.rows[1].drive.name + '」と「' + c.rows[2].drive.name + '」。' +
+    c.rows[1].drive.text });
+  themes.push({ title: '手薄な面（意識して補う）', body: '「' + low.drive.name + '」はどの流派でも弱く出た。' +
+    low.drive.text + ' ここは自力より、得意な人に任せるほうが早い。' });
+  themes.push({ title: '燃料の使い方', body: st.strong
+    ? '身強。自分のエネルギーが余りやすいので、出す先（' + st.favorNames.join('・') + '）を先に決めておくと安定する。仕事・表現・責任のどれかに継続的に注ぐこと。'
+    : '身弱。エネルギーは有限。' + st.favorNames.join('・') + 'にあたる分野（学び・仲間・支援）から補給しないと消耗する。断ることが技術になる。' });
+  themes.push({ title: '避けられない周期', body: ctx.sanmei.tenchusatsu.day + '。12年に2年、' +
+    ctx.sanmei.tenchusatsu.branches.join('・') + 'の年は結果を求めず仕込みに使う期間。ここで新規の大勝負を打つと空回りしやすい。' });
+  themes.push({ title: 'エネルギー総量', body: '算命学の十二大従星の合計は ' + ctx.sanmei.energy + '/36（' + ctx.sanmei.energyLabel +
+    '）。初年 ' + ctx.sanmei.ages.shoulder.star + '・中年 ' + ctx.sanmei.ages.rightFoot.star + '・晩年 ' + ctx.sanmei.ages.leftFoot.star +
+    ' の順に配分されている。' });
+  if (c.conflicts.length) themes.push({ title: '流派が割れた点', body: c.conflicts.map(function (x) { return x.text; }).join(' ') });
+  return themes;
+}
+/* --- 未来シミュレーター ---------------------------------------------------*/
+function futureSim(ctx, year) {
+  var ys = yearScore(ctx, year), ms = monthScores(ctx, year);
+  var dir = directions(ctx.kigaku, year, 0);
+  var best = ms.months.slice().sort(function (a, b) { return b.score - a.score; });
+  var tarot = drawSpread(ctx.tarot.seed + '#' + year, 3);
+  var pos = ['いまの状況', 'この一年の流れ', '結果として残るもの'];
+  return {
+    year: year, score: ys.score, age: ys.age, components: ys.components, months: ms.months,
+    best: best.slice(0, 3), worst: best.slice(-2).reverse(),
+    directions: dir,
+    tarot: tarot.map(function (t, i) { return { pos: pos[i], card: t.card.name, reversed: t.reversed,
+      text: t.card.major ? MAJOR_TEXT[t.card.num] : (t.card.suit + '＝' + t.card.elem + 'の領域。' +
+        (t.card.num <= 10 ? '段階 ' + t.card.num : '人物カード')) }; }),
+    verdict: ys.score >= 45 ? '攻めの年。動かすなら今。' : ys.score >= 15 ? '追い風寄り。準備してきたことを出す年。'
+      : ys.score >= -15 ? '横ばい。維持と改善に向く年。' : ys.score >= -45 ? '守りの年。新規より整理。'
+      : '仕込みの年。表の結果より、次に効く土台づくり。'
+  };
+}
+
+/* ==========================================================================*/
+return {
+  /* 解析 */
+  analyze: analyze, futureSim: futureSim, lifeTimeline: lifeTimeline, monthScores: monthScores,
+  yearScore: yearScore, yearComponents: yearComponents, compatibility: compatibility, pairYears: pairYears,
+  drawSpread: drawSpread, directions: directions,
+  /* 個別エンジン (単体でも使える) */
+  fourPillars: fourPillars, sanmei: sanmei, ziwei: ziwei, western: western, vedic: vedic,
+  numerology: numerology, kigaku: kigaku, lunarCalendar: lunarCalendar, allTerms: allTerms,
+  /* 定数と道具 */
+  STEM: STEM, BRANCH: BRANCH, ELEM: ELEM, SIGNS: SIGNS, DRIVES: DRIVES, KYUSEI: KYUSEI,
+  TENGOD: TENGOD, TWELVE: TWELVE, MAJOR: MAJOR, PY_THEME: PY_THEME,
+  TEXT_TENGOD: TEXT_TENGOD, TEXT_SHUSEI: TEXT_SHUSEI, TEXT_JUSEI: TEXT_JUSEI, TEXT_ZW: TEXT_ZW,
+  TEXT_PLANET: TEXT_PLANET, TEXT_SIGN: TEXT_SIGN, TEXT_HOUSE: TEXT_HOUSE, TEXT_KYUSEI: TEXT_KYUSEI,
+  MAJOR_TEXT: MAJOR_TEXT, DAY_MASTER: DAY_MASTER,
+  toJD: toJD, fromJD: fromJD, localToJD: localToJD, fmtLon: fmtLon, solarTermJD: solarTermJD,
+  starOfYear: starOfYear, board: board, annualPillar: annualPillar
+};
+})();
+if (typeof module !== 'undefined') module.exports = MDS;
+</script>
+<script>
+/* ============================================================================
+ * UI — フォーム、タブ、各セクションの描画
+ * ==========================================================================*/
+(function () {
+'use strict';
+var $ = function (id) { return document.getElementById(id); };
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' })[c]; }); }
+function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; }
+
+/* --- 出生地 ---------------------------------------------------------------*/
+var PLACES = [
+ ['— 都道府県 —'],
+ ['北海道・札幌',43.06,141.35,9],['青森',40.82,140.74,9],['岩手・盛岡',39.70,141.15,9],['宮城・仙台',38.27,140.87,9],
+ ['秋田',39.72,140.10,9],['山形',38.24,140.36,9],['福島',37.75,140.47,9],['茨城・水戸',36.34,140.45,9],
+ ['栃木・宇都宮',36.57,139.88,9],['群馬・前橋',36.39,139.06,9],['埼玉・さいたま',35.86,139.65,9],['千葉',35.61,140.12,9],
+ ['東京',35.69,139.69,9],['神奈川・横浜',35.45,139.64,9],['新潟',37.90,139.02,9],['富山',36.70,137.21,9],
+ ['石川・金沢',36.59,136.63,9],['福井',36.07,136.22,9],['山梨・甲府',35.66,138.57,9],['長野',36.65,138.18,9],
+ ['岐阜',35.39,136.72,9],['静岡',34.98,138.38,9],['愛知・名古屋',35.18,136.91,9],['三重・津',34.73,136.51,9],
+ ['滋賀・大津',35.00,135.87,9],['京都',35.02,135.76,9],['大阪',34.69,135.52,9],['兵庫・神戸',34.69,135.20,9],
+ ['奈良',34.69,135.83,9],['和歌山',34.23,135.17,9],['鳥取',35.50,134.24,9],['島根・松江',35.47,133.05,9],
+ ['岡山',34.66,133.93,9],['広島',34.40,132.46,9],['山口',34.19,131.47,9],['徳島',34.07,134.56,9],
+ ['香川・高松',34.34,134.04,9],['愛媛・松山',33.84,132.77,9],['高知',33.56,133.53,9],['福岡',33.61,130.42,9],
+ ['佐賀',33.25,130.30,9],['長崎',32.74,129.87,9],['熊本',32.79,130.74,9],['大分',33.24,131.61,9],
+ ['宮崎',31.91,131.42,9],['鹿児島',31.56,130.56,9],['沖縄・那覇',26.21,127.68,9],
+ ['— 海外 —'],
+ ['ソウル',37.57,126.98,9],['台北',25.03,121.57,8],['北京',39.90,116.41,8],['上海',31.23,121.47,8],
+ ['香港',22.32,114.17,8],['シンガポール',1.35,103.82,8],['バンコク',13.76,100.50,7],['デリー',28.61,77.21,5.5],
+ ['ドバイ',25.20,55.27,4],['モスクワ',55.76,37.62,3],['ロンドン',51.51,-0.13,0],['パリ',48.86,2.35,1],
+ ['ベルリン',52.52,13.40,1],['ローマ',41.90,12.50,1],['ニューヨーク',40.71,-74.01,-5],['シカゴ',41.88,-87.63,-6],
+ ['ロサンゼルス',34.05,-118.24,-8],['サンパウロ',-23.55,-46.63,-3],['シドニー',-33.87,151.21,10],['ホノルル',21.31,-157.86,-10]
+];
+function fillPlaces(sel, def) {
+  PLACES.forEach(function (p, i) {
+    var o = document.createElement('option');
+    o.value = i; o.textContent = p[0]; if (p.length === 1) o.disabled = true;
+    sel.appendChild(o);
+  });
+  sel.value = def;
+}
+
+/* --- 図版 ----------------------------------------------------------------*/
+function bars(items, opts) {
+  opts = opts || {};
+  var max = Math.max.apply(null, items.map(function (i) { return Math.abs(i.value); })) || 1;
+  var t = '<table>';
+  items.forEach(function (i) {
+    var col = i.value < 0 ? 'var(--bad)' : (i.color || 'var(--accent)'), inner;
+    if (opts.signed) {                      /* 0 を中央に置いた左右振り分け */
+      var w = Math.abs(i.value) / max * 50;
+      inner = '<div class="bar" style="position:relative">' +
+        '<i style="position:absolute;top:0;left:' + (i.value < 0 ? 50 - w : 50).toFixed(1) + '%;width:' +
+        w.toFixed(1) + '%;background:' + col + '"></i>' +
+        '<i style="position:absolute;top:0;left:50%;width:1px;background:var(--muted);opacity:.5"></i></div>';
+    } else {
+      inner = '<div class="bar"><i style="width:' + (Math.abs(i.value) / max * 100).toFixed(1) +
+        '%;background:' + col + '"></i></div>';
+    }
+    t += '<tr><th style="width:34%">' + esc(i.label) + '</th>' +
+         '<td style="width:46%">' + inner + '</td>' +
+         '<td class="num" style="width:20%">' + esc(i.text !== undefined ? i.text : i.value.toFixed(1)) + '</td></tr>';
+  });
+  return t + '</table>';
+}
+function timelineSVG(series, marks) {
+  var W = 860, H = 240, PL = 34, PR = 12, PT = 14, PB = 26;
+  var n = series.length, xs = function (i) { return PL + i / (n - 1) * (W - PL - PR); };
+  /* 合成カーブは ±100 いっぱいには振れないので、実データに合わせて縦軸を取り直す */
+  var vals = series.map(function (p) { return p.score; });
+  var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  var span = Math.max(hi - lo, 30), pad = span * 0.18;
+  lo = Math.min(lo - pad, -8); hi = Math.max(hi + pad, 8);
+  var step = Math.pow(10, Math.floor(Math.log(span / 4) / Math.LN10));
+  [1, 2, 2.5, 5, 10].some(function (m) { if (step * m >= span / 5) { step = step * m; return true; } return false; });
+  var ys = function (v) { return PT + (hi - v) / (hi - lo) * (H - PT - PB); };
+  var d = series.map(function (p, i) { return (i ? 'L' : 'M') + xs(i).toFixed(1) + ' ' + ys(p.score).toFixed(1); }).join(' ');
+  var area = d + ' L' + xs(n - 1).toFixed(1) + ' ' + ys(0).toFixed(1) + ' L' + xs(0).toFixed(1) + ' ' + ys(0).toFixed(1) + ' Z';
+  var g = '';
+  for (var v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    var near0 = Math.abs(v) < 1e-9;
+    g += '<line x1="' + PL + '" y1="' + ys(v).toFixed(1) + '" x2="' + (W - PR) + '" y2="' + ys(v).toFixed(1) +
+         '" stroke="var(--line)" stroke-width="' + (near0 ? 1.4 : 0.7) + '"/>' +
+         '<text x="4" y="' + (ys(v) + 4).toFixed(1) + '" font-size="10" fill="var(--muted)">' + Math.round(v) + '</text>';
+  }
+  for (var a = 0; a < n; a += 10) {
+    g += '<line x1="' + xs(a) + '" y1="' + PT + '" x2="' + xs(a) + '" y2="' + (H - PB) + '" stroke="var(--line)" stroke-width="0.5"/>' +
+         '<text x="' + xs(a) + '" y="' + (H - 8) + '" font-size="10" fill="var(--muted)" text-anchor="middle">' + series[a].age + '歳</text>';
+  }
+  var m = '';
+  (marks || []).forEach(function (k, i) {
+    var idx = series.map(function (s) { return s.age; }).indexOf(Math.round(k.age));
+    if (idx < 0) return;
+    var col = k.type === '天中殺' ? 'var(--bad)' : k.type === '大運' ? 'var(--accent)' : 'var(--accent2)';
+    m += '<line x1="' + xs(idx) + '" y1="' + PT + '" x2="' + xs(idx) + '" y2="' + (H - PB) +
+         '" stroke="' + col + '" stroke-width="0.9" stroke-dasharray="3 3" opacity="0.75"/>';
+  });
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="人生の運勢カーブ">' + g + m +
+    '<path d="' + area + '" fill="var(--accent)" opacity="0.13"/>' +
+    '<path d="' + d + '" fill="none" stroke="var(--accent)" stroke-width="2"/></svg>';
+}
+function monthBars(months) {
+  var W = 860, H = 170, PL = 8, PB = 34, bw = (W - PL * 2) / 12;
+  var s = '';
+  months.forEach(function (m, i) {
+    var x = PL + i * bw, h = Math.abs(m.score) / 100 * (H - PB) / 2, y0 = (H - PB) / 2;
+    s += '<rect x="' + (x + 5) + '" y="' + (m.score >= 0 ? y0 - h : y0) + '" width="' + (bw - 10) + '" height="' + Math.max(1, h) +
+         '" fill="' + (m.score >= 0 ? 'var(--accent)' : 'var(--bad)') + '" opacity="0.85" rx="2"/>' +
+         '<text x="' + (x + bw / 2) + '" y="' + (H - 18) + '" font-size="10.5" fill="var(--muted)" text-anchor="middle">' + esc(m.pillar) + '</text>' +
+         '<text x="' + (x + bw / 2) + '" y="' + (H - 5) + '" font-size="9.5" fill="var(--muted)" text-anchor="middle">' + esc(m.short) + '</text>';
+  });
+  s += '<line x1="' + PL + '" y1="' + (H - PB) / 2 + '" x2="' + (W - PL) + '" y2="' + (H - PB) / 2 + '" stroke="var(--line)"/>';
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="月別の運勢">' + s + '</svg>';
+}
+function gauge(score) {
+  var pct = (score + 100) / 2;
+  return '<div class="bar" style="height:14px"><i style="width:' + pct.toFixed(1) + '%;background:' +
+    (score >= 0 ? 'var(--good)' : 'var(--bad)') + '"></i></div>';
+}
+
+/* --- セクション: 魂の設計図 -----------------------------------------------*/
+function renderBlueprint(A) {
+  var c = el('div');
+  var s = '<div class="card"><h2>魂の設計図</h2><p class="lead">' + esc(A.blueprint.summary) + '</p></div>';
+
+  s += '<div class="card"><h2>統合された動機の軸</h2>' +
+    '<p class="small muted">各流派の出力を 12 の動機軸に写像し、流派ごとの重みで平均したもの。' +
+    '右の「賛成」は、その軸をトップ 3 に入れた流派の数。</p>' +
+    bars(A.consensus.rows.map(function (r) {
+      return { label: r.drive.name, value: r.pct, text: r.pct.toFixed(1) + '%　' + r.votes + '/' + A.vectors.length };
+    })) + '</div>';
+
+  s += '<div class="card"><h2>いちばん強い 3 軸</h2>';
+  A.consensus.top.slice(0, 3).forEach(function (r) {
+    s += '<h3>' + esc(r.drive.name) + ' <span class="tag">' + r.pct.toFixed(1) + '%</span>' +
+      '<span class="tag ' + (r.votes >= 3 ? 'good' : '') + '">' + r.votes + ' 流派が支持</span></h3>' +
+      '<p class="small">' + esc(r.drive.text) + '</p>' +
+      '<p class="small muted">支持：' + esc(r.voters.join('・') || 'なし') + '</p>';
+  });
+  s += '</div>';
+
+  s += '<div class="card"><h2>流派ごとの中核</h2><div class="scroll"><table><tr><th>流派</th><th>記号</th><th>読み</th></tr>';
+  A.blueprint.core.forEach(function (x) {
+    s += '<tr><td class="muted small" style="white-space:nowrap">' + esc(x.system) + '</td><td><b>' + esc(x.key) + '</b></td><td>' + esc(x.text) + '</td></tr>';
+  });
+  s += '</table></div></div>';
+
+  s += '<div class="card"><h2>気質のバランス</h2><h3>五行（東洋系の統合）</h3>' +
+    bars(A.temperament.gogyo.map(function (g) { return { label: g.name, value: g.pct, text: g.pct.toFixed(0) + '%' }; })) +
+    '<h3>四元素（西洋系の統合）</h3>' +
+    bars(A.temperament.west.map(function (g) { return { label: g.name, value: g.pct, text: g.pct.toFixed(0) + '%', color: 'var(--accent2)' }; })) +
+    '<p class="note">五行と四元素は体系が違うので合成せず、並べて表示しています。' +
+    '厚い要素は自動的に出る面、薄い要素は意識しないと出ない面です。</p></div>';
+
+  if (A.consensus.conflicts.length) {
+    s += '<div class="card"><h2>流派が食い違った軸</h2>';
+    A.consensus.conflicts.forEach(function (x) { s += '<p class="small">・' + esc(x.text) + '</p>'; });
+    s += '<p class="note">統合はここを平均で埋めますが、実際には「状況次第で出る面」として扱うほうが実態に近いはずです。</p></div>';
+  }
+  c.innerHTML = s; return c;
+}
+
+/* --- セクション: 人生テーマ -----------------------------------------------*/
+function renderThemes(A) {
+  var c = el('div'), s = '<div class="card"><h2>人生テーマ</h2>';
+  A.themes.forEach(function (t) { s += '<h3>' + esc(t.title) + '</h3><p class="small">' + esc(t.body) + '</p>'; });
+  s += '</div>';
+  s += '<div class="card"><h2>誕生カード</h2>' +
+    '<p class="lead"><b>' + esc(A.tarot.birth.card) + '</b>（ソウルカード：' + esc(A.tarot.birth.soulCard) + '）</p>' +
+    '<p class="small">' + esc(A.tarot.birthText) + '</p>' +
+    '<p class="note">生年月日の数値から一意に決まるカードで、引き直しても変わりません。</p></div>';
+  s += '<div class="card"><h2>手薄な軸を補う具体策</h2><div class="scroll"><table><tr><th>軸</th><th>足りない理由</th><th>補い方</th></tr>';
+  A.consensus.bottom.forEach(function (r) {
+    s += '<tr><td><b>' + esc(r.drive.short) + '</b></td><td class="small">' + r.votes + ' 流派しか拾わなかった（' + r.pct.toFixed(1) + '%）</td>' +
+      '<td class="small">' + esc(SUPPLY[r.drive.id]) + '</td></tr>';
+  });
+  s += '</table></div></div>';
+  c.innerHTML = s; return c;
+}
+var SUPPLY = {
+ 1:'決定権のある小さな役割を引き受ける。人数の少ない場で先に手を挙げる。',
+ 2:'固定費と資産を数字で把握する。手で触れられる持ち物を整える。',
+ 3:'週に一度、学んだことを人に説明する。書く場所を持つ。',
+ 4:'帰る場所と定期的に会う相手を決める。感情を言語化する習慣。',
+ 5:'成果物にならない趣味を持つ。締切のない制作をする。',
+ 6:'生活の手順を仕組みにする。体の状態を記録する。',
+ 7:'一対一の対話の時間を予定に入れる。相手の言い分を先に要約する。',
+ 8:'一つのテーマを年単位で掘る。表面的な情報を減らす。',
+ 9:'遠くへ行く。長期の目標を紙に書いて見える場所に置く。',
+ 10:'結果を測れる目標を一つだけ持つ。責任のある立場を断らない。',
+ 11:'利害のないコミュニティに参加する。新しい道具を早めに触る。',
+ 12:'一人になる時間を確保する。身体感覚の伴う実践（運動・呼吸・自然）を入れる。'
+};
+
+/* --- セクション: 運命サイクル ---------------------------------------------*/
+function renderCycles(A) {
+  var c = el('div'), s = '';
+  s += '<div class="card"><h2>周期の重なり</h2><p class="small muted">' +
+    '長さの違う周期を同時に走らせているのが、この解析の中心です。' +
+    'それぞれ位相が違うため、合成された運勢は単純な繰り返しになりません。</p>' +
+    '<div class="scroll"><table><tr><th>周期</th><th>長さ</th><th>いまの位置</th></tr>' +
+    '<tr><td>大運（四柱推命）</td><td>10 年</td><td>' + esc(A.daiun.label) + '・立運 ' + A.daiun.startAge.toFixed(1) + ' 歳から</td></tr>' +
+    '<tr><td>大限（紫微斗数）</td><td>10 年</td><td>' + esc(A.ziwei.kyoku) + 'のため ' + A.ziwei.kyokuNum + ' 歳から、' + (A.ziwei.forward ? '順行' : '逆行') + '</td></tr>' +
+    '<tr><td>流年（干支）</td><td>12 年</td><td>60 年で一巡</td></tr>' +
+    '<tr><td>天中殺</td><td>12 年に 2 年</td><td>' + esc(A.sanmei.tenchusatsu.day) + '</td></tr>' +
+    '<tr><td>九星の巡り</td><td>9 年</td><td>' + esc(A.kigaku.honmeiName) + 'として盤上を移動</td></tr>' +
+    '<tr><td>パーソナルイヤー</td><td>9 年</td><td>数秘の 1→9 サイクル</td></tr>' +
+    '<tr><td>ヴィムショッタリ・ダシャー</td><td>6〜20 年</td><td>' + esc(A.vedic.startLord) + '期から開始（残 ' + A.vedic.balance.toFixed(1) + ' 年）</td></tr>' +
+    '<tr><td>木星／土星の回帰</td><td>11.9 年／29.5 年</td><td>西洋のトランジット</td></tr>' +
+    '</table></div></div>';
+
+  s += '<div class="card"><h2>大運（10 年ごとの土台）</h2><div class="scroll"><table><tr><th>年齢</th><th>干支</th><th>十神</th><th>十二運</th><th>用神との関係</th></tr>';
+  A.daiun.list.forEach(function (L) {
+    s += '<tr><td class="num">' + Math.round(L.from) + '〜' + Math.round(L.to) + '</td><td><b>' + esc(L.pillar.name) + '</b></td>' +
+      '<td>' + esc(L.tenGod) + '</td><td>' + esc(L.stage) + '</td><td class="small">' + esc(daiunNote(A, L)) + '</td></tr>';
+  });
+  s += '</table></div><p class="note">大運の切り替わりは立運（' + A.daiun.startAge.toFixed(1) + ' 歳）を起点に 10 年ごとです。</p></div>';
+
+  s += '<div class="card"><h2>大限（紫微斗数）</h2><div class="scroll"><table><tr><th>年齢</th><th>宮</th><th>支</th><th>主星</th></tr>';
+  A.ziwei.limits.forEach(function (L) {
+    s += '<tr><td class="num">' + L.from + '〜' + L.to + '</td><td>' + esc(L.palace) + '</td><td>' + esc(L.branchName) + '</td>' +
+      '<td class="small">' + esc(L.majors.join('・') || '空宮（対宮を借りる）') + '</td></tr>';
+  });
+  s += '</table></div></div>';
+
+  s += '<div class="card"><h2>ダシャー（インド占星術）</h2><div class="scroll"><table><tr><th>年齢</th><th>期</th><th>長さ</th></tr>';
+  A.vedic.dasha.forEach(function (D) {
+    s += '<tr><td class="num">' + D.from.toFixed(1) + '〜' + D.to.toFixed(1) + '</td><td><b>' + esc(D.lord) + '</b></td><td class="num">' + D.years.toFixed(1) + ' 年</td></tr>';
+  });
+  s += '</table></div><p class="note">出生時の月の位置（' + esc(A.vedic.nakshatra) + '）で開始点が決まります。</p></div>';
+
+  var tc = [];
+  for (var yy = A.pillars.solarYear; yy < A.pillars.solarYear + 100; yy++) {
+    if (A.pillars.kubou.indexOf(((yy - 4) % 12 + 12) % 12) >= 0) tc.push(yy + '（' + (yy - A.pillars.solarYear) + '歳）');
+  }
+  s += '<div class="card"><h2>天中殺の年</h2><p class="small">' + esc(A.sanmei.tenchusatsu.day) + '。以下の年は結果を求めず、仕込み・整理・学習に使う期間とされます。</p>' +
+    '<p class="small muted">' + esc(tc.join('、')) + '</p></div>';
+  c.innerHTML = s; return c;
+}
+function daiunNote(A, L) {
+  var f = A.strength.favorNames;
+  var favS = f.indexOf(elemOfStem(L.pillar.name[0])) >= 0, favB = f.indexOf(elemOfBranch(L.pillar.name[1])) >= 0;
+  if (favS && favB) return '干支ともに用神。伸びやすい 10 年。';
+  if (favS || favB) return '半分が用神。追い風と向かい風が混ざる。';
+  var avS = A.strength.avoidNames.indexOf(elemOfStem(L.pillar.name[0])) >= 0;
+  return avS ? '忌神寄り。無理に広げず土台を固める 10 年。' : '中立。環境しだいで振れる。';
+}
+function elemOfStem(ch) { var i = '甲乙丙丁戊己庚辛壬癸'.indexOf(ch); return MDS.ELEM[[0,0,1,1,2,2,3,3,4,4][i]]; }
+function elemOfBranch(ch) { var i = '子丑寅卯辰巳午未申酉戌亥'.indexOf(ch); return MDS.ELEM[[4,2,0,0,2,1,1,2,3,3,2,4][i]]; }
+
+/* --- セクション: 未来シミュレーター ---------------------------------------*/
+function renderFuture(A, year) {
+  var c = el('div');
+  function draw(y) {
+    var F = MDS.futureSim(A, y);
+    var s = '<div class="card"><h2>未来シミュレーター</h2>' +
+      '<div class="grid" style="max-width:340px"><div><label>対象の年</label>' +
+      '<input id="simy" type="number" value="' + y + '" min="1900" max="2200"></div>' +
+      '<div style="align-self:end"><button class="mini" id="simgo">この年で計算</button></div></div>' +
+      '<h3>' + y + ' 年（' + F.age + ' 歳）　総合 ' + F.score.toFixed(0) + '</h3>' + gauge(F.score) +
+      '<p class="lead" style="margin-top:10px">' + esc(F.verdict) + '</p></div>';
+
+    s += '<div class="card"><h2>内訳（どの流派がどう出したか）</h2><div class="scroll"><table>' +
+      '<tr><th>流派・要素</th><th>スコア</th><th>重み</th><th>補足</th></tr>';
+    F.components.forEach(function (x) {
+      s += '<tr><td>' + esc(x.label) + '</td><td class="num ' + (x.score > 0 ? 'pos' : x.score < 0 ? 'neg' : '') + '">' +
+        (x.score > 0 ? '+' : '') + x.score.toFixed(0) + '</td><td class="num muted">×' + x.w.toFixed(1) + '</td>' +
+        '<td class="small muted">' + esc(x.detail || '') + '</td></tr>';
+    });
+    s += '</table></div><p class="note">総合はこの加重平均を ±100 に収めたものです。</p></div>';
+
+    s += '<div class="card"><h2>月ごとの流れ（節入り区切り）</h2>' + monthBars(F.months) +
+      '<div class="scroll"><table><tr><th>節月</th><th>月干支</th><th>スコア</th><th>九星</th><th>数秘</th><th></th></tr>';
+    F.months.forEach(function (m) {
+      s += '<tr><td class="small">' + esc(m.label) + '</td><td>' + esc(m.pillar) + '</td>' +
+        '<td class="num ' + (m.score > 0 ? 'pos' : 'neg') + '">' + m.score.toFixed(0) + '</td>' +
+        '<td class="small muted">' + esc(m.kyusei) + '</td><td class="small muted">PM' + m.personalMonth + '</td>' +
+        '<td>' + (m.kuubou ? '<span class="tag bad">空亡月</span>' : '') + '</td></tr>';
+    });
+    s += '</table></div><p class="small" style="margin-top:8px"><b>動くなら：</b>' +
+      esc(F.best.map(function (m) { return m.short; }).join('、')) +
+      '　<b>整えるなら：</b>' + esc(F.worst.map(function (m) { return m.short; }).join('、')) + '</p></div>';
+
+    s += '<div class="card"><h2>' + y + ' 年の方位（九星気学）</h2>' +
+      '<p class="small">年盤の中宮は ' + esc(MDS.KYUSEI[F.directions.center]) + '。</p>' +
+      '<p class="small"><b>吉方位：</b>' + esc(F.directions.good.map(function (g) { return g.dir + '（' + g.star + '／' + g.why + '）'; }).join('、') || 'この年は該当なし') + '</p>' +
+      '<p class="small"><b>凶方位：</b>' + esc(F.directions.bad.map(function (g) { return g.dir + '（' + g.why + '）'; }).join('、')) + '</p>' +
+      '<p class="note">吉方位は本命星を生じる星・同じ五行の星・月命星と同会する方位から、五黄殺・暗剣殺・本命殺・本命的殺・歳破を除いたものです。</p></div>';
+
+    s += '<div class="card"><h2>' + y + ' 年のタロット</h2><div class="scroll"><table>';
+    F.tarot.forEach(function (t) {
+      s += '<tr><th style="width:26%">' + esc(t.pos) + '</th><td><b>' + esc(t.card) + (t.reversed ? '（逆位置）' : '') + '</b><br><span class="small muted">' + esc(t.text) + '</span></td></tr>';
+    });
+    s += '</table></div><p class="note">出生データと対象年をシードにした決定論的シャッフルです。同じ入力なら何度引いても同じ札が出ます。</p></div>';
+    c.innerHTML = s;
+    /* このノードはまだ document に入っていないので c の中から引く */
+    c.querySelector('#simgo').onclick = function () {
+      draw(parseInt(c.querySelector('#simy').value, 10) || y);
+    };
+  }
+  draw(year);
+  return c;
+}
+
+/* --- セクション: 人生年表 -------------------------------------------------*/
+function renderChrono(A) {
+  var T = MDS.lifeTimeline(A, 0, 95), c = el('div');
+  var s = '<div class="card"><h2>人生年表</h2>' +
+    '<p class="small muted">大運・流年・天中殺・九星・パーソナルイヤー・紫微大限・ダシャー・木星／土星の回帰を重ね合わせた合成カーブ。' +
+    '縦の破線は節目（紫＝大運、橙＝大限やダシャー、赤＝天中殺）。</p>' + timelineSVG(T.series, T.marks) + '</div>';
+
+  s += '<div class="card"><h2>山と谷</h2><div class="grid"><div><h3>追い風の年</h3><table>';
+  T.peaks.forEach(function (p) { s += '<tr><th>' + p.age + ' 歳</th><td class="num">' + p.year + '</td><td class="num pos">' + p.score.toFixed(0) + '</td></tr>'; });
+  s += '</table></div><div><h3>仕込みの年</h3><table>';
+  T.valleys.forEach(function (p) { s += '<tr><th>' + p.age + ' 歳</th><td class="num">' + p.year + '</td><td class="num neg">' + p.score.toFixed(0) + '</td></tr>'; });
+  s += '</table></div></div><p class="note">スコアが低い年は「悪い年」ではなく、外向きの成果が出にくく内向きの仕込みが効く年、という読み方をします。</p></div>';
+
+  s += '<div class="card"><h2>節目の一覧</h2><div class="scroll"><table><tr><th>年齢</th><th>西暦</th><th>種類</th><th>内容</th></tr>';
+  T.marks.forEach(function (m) {
+    s += '<tr><td class="num">' + Math.round(m.age) + '</td><td class="num muted">' + (A.pillars.solarYear + Math.round(m.age)) + '</td>' +
+      '<td><span class="tag' + (m.type === '天中殺' ? ' bad' : '') + '">' + esc(m.type) + '</span></td><td class="small">' + esc(m.text) + '</td></tr>';
+  });
+  s += '</table></div></div>';
+  c.innerHTML = s; return c;
+}
+
+/* --- セクション: 人間関係 -------------------------------------------------*/
+function renderRelation(A) {
+  var c = el('div');
+  c.innerHTML = '<div class="card"><h2>人間関係アルゴリズム</h2>' +
+    '<p class="small muted">相手の出生情報を入れると、日干・日支・年支・九星・西洋シナストリー・数秘・血液型を' +
+    'それぞれ独立に採点し、重み付きで合成します。</p>' +
+    '<div class="grid">' +
+    '<div><label>生年</label><input id="py" type="number" value="1988"></div>' +
+    '<div><label>月</label><input id="pm" type="number" value="3" min="1" max="12"></div>' +
+    '<div><label>日</label><input id="pd" type="number" value="9" min="1" max="31"></div>' +
+    '<div><label>時</label><input id="ph" type="number" value="10" min="0" max="23"></div>' +
+    '<div><label>分</label><input id="pmi" type="number" value="0" min="0" max="59"></div>' +
+    '<div><label>性別</label><select id="psex"><option value="male">男性</option><option value="female">女性</option></select></div>' +
+    '</div><div class="grid" style="margin-top:10px">' +
+    '<div><label>出生地</label><select id="pplace"></select></div>' +
+    '<div><label>緯度</label><input id="plat" type="number" step="0.01" value="35.69"></div>' +
+    '<div><label>経度</label><input id="plon" type="number" step="0.01" value="139.69"></div>' +
+    '<div><label>UTCオフセット</label><input id="ptz" type="number" step="0.5" value="9"></div>' +
+    '<div><label>血液型</label><select id="pblood"><option value="">指定しない</option><option>A</option><option>B</option><option>O</option><option>AB</option></select></div>' +
+    '<div><label>名前（ローマ字・任意）</label><input id="pname" type="text"></div>' +
+    '</div><div style="margin-top:8px" class="chk"><input id="pnohour" type="checkbox"><label style="display:inline">時刻がわからない</label></div>' +
+    '<button class="go" id="pgo">相性を計算する</button></div><div id="pout"></div>';
+  var sel = c.querySelector('#pplace');
+  fillPlaces(sel, 13);
+  sel.onchange = function () {
+    var p = PLACES[+sel.value]; if (p.length === 1) return;
+    c.querySelector('#plat').value = p[1]; c.querySelector('#plon').value = p[2]; c.querySelector('#ptz').value = p[3];
+  };
+  c.querySelector('#pgo').onclick = function () {
+    var g = function (id) { return c.querySelector('#' + id); };
+    var noh = g('pnohour').checked;
+    var B = MDS.analyze({ y: +g('py').value, m: +g('pm').value, d: +g('pd').value,
+      hour: +g('ph').value, minute: +g('pmi').value, hasHour: !noh, tz: +g('ptz').value,
+      lat: +g('plat').value, lon: +g('plon').value, sex: g('psex').value,
+      blood: g('pblood').value, name: g('pname').value });
+    var C = MDS.compatibility(A, B), out = g('pout');
+    var s = '<div class="card"><h2>結果</h2><h3>総合 ' + C.total + ' / 100　<span class="tag">' + esc(C.label) + '</span>' +
+      '<span class="tag">' + esc(C.type) + '</span></h3>' +
+      '<div class="bar" style="height:14px"><i style="width:' + C.total + '%"></i></div>' +
+      '<p class="lead" style="margin-top:10px">' + esc(C.advice) + '</p>' +
+      '<p class="small muted">あなたの中心軸は「' + esc(C.driveA.name) + '」、相手は「' + esc(C.driveB.name) + '」。</p></div>';
+    s += '<div class="card"><h2>採点の内訳</h2><div class="scroll"><table><tr><th>観点</th><th>点</th><th>重み</th><th>根拠</th></tr>';
+    C.parts.forEach(function (p) {
+      s += '<tr><td>' + esc(p.name) + '</td><td class="num">' + p.score.toFixed(0) + '</td><td class="num muted">×' + p.w.toFixed(2) + '</td>' +
+        '<td class="small">' + esc(p.why) + (p.note ? '<br><span class="muted">' + esc(p.note) + '</span>' : '') + '</td></tr>';
+    });
+    s += '</table></div></div>';
+    if (C.synastry.items.length) {
+      s += '<div class="card"><h2>西洋シナストリーの主なアスペクト</h2><p class="small">' +
+        C.synastry.items.map(function (x) { return esc(x.text) + '<span class="muted small">（' + (x.val > 0 ? '+' : '') + x.val + '）</span>'; }).join('　／　') + '</p></div>';
+    }
+    var py = MDS.pairYears(A, B, new Date().getFullYear(), 10);
+    s += '<div class="card"><h2>二人にとっての向こう 10 年</h2>' +
+      bars(py.map(function (x) { return { label: x.year + ' 年', value: x.both, text: x.both.toFixed(0) }; }), { signed: true }) +
+      '<p class="note">それぞれの年運を出したうえで、二人のスコア差が大きい年は補正して下げています（片方だけ絶好調の年は噛み合いにくいため）。</p></div>';
+    s += '<div class="card"><h2>相手の要点</h2><p class="small">' + esc(B.blueprint.summary) + '</p>' +
+      '<p class="small muted">四柱：' + esc(B.pillars.year.name + ' ' + B.pillars.month.name + ' ' + B.pillars.day.name + (B.pillars.hasHour ? ' ' + B.pillars.hour.name : '')) +
+      '／' + esc(B.kigaku.honmeiName) + '／LP' + B.numerology.lifePath + '</p></div>';
+    out.innerHTML = s;
+  };
+  return c;
+}
+
+/* --- セクション: 命式データ -----------------------------------------------*/
+var ZW_CELL = { 5:[1,1], 6:[1,2], 7:[1,3], 8:[1,4], 4:[2,1], 9:[2,4], 3:[3,1], 10:[3,4],
+                2:[4,1], 1:[4,2], 0:[4,3], 11:[4,4] };
+function renderRaw(A) {
+  var c = el('div'), P = A.pillars, s = '';
+  if (!P.hasHour) s += '<div class="card"><p class="warn">出生時刻が未指定のため、<b>時柱・アセンダント・ハウス・紫微斗数の命宮</b>は算出できていません。' +
+    '（時柱は 12 時、ハウスはホールサインで代用しています。）これらに依存する結果は参考値として扱ってください。</p></div>';
+
+  /* 四柱 */
+  s += '<div class="card"><h2>四柱推命</h2><div class="scroll"><table><tr><th></th>' +
+    A.detail.map(function (d) { return '<th>' + d.label + '</th>'; }).join('') + '</tr>' +
+    '<tr><th>干支</th>' + A.detail.map(function (d) { return '<td style="font-size:18px;font-weight:600">' + esc(d.pillar.name) + '</td>'; }).join('') + '</tr>' +
+    '<tr><th>十神</th>' + A.detail.map(function (d) { return '<td>' + esc(d.stemTenGod) + '</td>'; }).join('') + '</tr>' +
+    '<tr><th>蔵干</th>' + A.detail.map(function (d) { return '<td class="small">' + d.hidden.map(function (h) { return esc(h.name + '（' + h.tenGod + '）'); }).join('<br>') + '</td>'; }).join('') + '</tr>' +
+    '<tr><th>十二運</th>' + A.detail.map(function (d) { return '<td>' + esc(d.stage) + '</td>'; }).join('') + '</tr>' +
+    '<tr><th>納音</th>' + A.detail.map(function (d) { return '<td class="small muted">' + esc(d.pillar.nayin.name) + '</td>'; }).join('') + '</tr>' +
+    '<tr><th>空亡</th>' + A.detail.map(function (d) { return '<td>' + (d.kubouHit ? '<span class="tag bad">空亡</span>' : '') + '</td>'; }).join('') + '</tr>' +
+    '</table></div>' +
+    '<p class="kv"><b>日主</b> ' + esc(MDS.STEM[P.day.stem]) + '（' + esc(MDS.ELEM[A.strength.dayElem]) + '）／' +
+    '<b>身</b> ' + (A.strength.strong ? '強' : '弱') + '（指標 ' + A.strength.ratio.toFixed(3) + '、' + (A.strength.tokurei ? '得令' : '失令') + '・月令 ' + esc(A.strength.monthStage) + '）／' +
+    '<b>格局</b> ' + esc(A.strength.kakkyoku) + '</p>' +
+    '<p class="kv"><b>用神</b>（補うとよい五行）' + esc(A.strength.favorNames.join('・')) + '　<b>忌神</b> ' + esc(A.strength.avoidNames.join('・')) + '</p>' +
+    '<p class="kv"><b>天中殺</b> ' + esc(A.sanmei.tenchusatsu.day) + '（空亡：' + esc(A.sanmei.tenchusatsu.branches.join('・')) + '）</p>' +
+    '<h3>五行の量</h3>' + bars(A.strength.balance.pct.map(function (x, i) { return { label: MDS.ELEM[i], value: x, text: x.toFixed(1) + '%' }; })) +
+    '</div>';
+
+  /* 算命学 */
+  var B = A.sanmei;
+  s += '<div class="card"><h2>算命学</h2><h3>人体星図</h3><div class="body9">' +
+    cell(B.ages.shoulder) + cell(B.body.head) + '<div class="c blank"></div>' +
+    cell(B.body.left) + cell(B.body.chest, 1) + cell(B.body.right) +
+    cell(B.ages.leftFoot) + cell(B.body.belly) + cell(B.ages.rightFoot) +
+    '</div>' +
+    '<p class="note">左上・左下・右下が十二大従星（エネルギーの配分）、それ以外が十大主星（性質）です。</p>' +
+    '<p class="kv"><b>エネルギー総量</b> ' + B.energy + '/36（' + esc(B.energyLabel) + '）　' +
+    '初年 ' + esc(B.ages.shoulder.star) + '／中年 ' + esc(B.ages.rightFoot.star) + '／晩年 ' + esc(B.ages.leftFoot.star) + '</p>' +
+    '<h3>星の意味</h3><div class="scroll"><table>' +
+    ['head','chest','belly','left','right'].map(function (k) {
+      return '<tr><th>' + esc(B.body[k].pos) + '</th><td><b>' + esc(B.body[k].star) + '</b> <span class="muted small">' + esc(B.body[k].mean) + '</span><br>' +
+        '<span class="small">' + esc(MDS.TEXT_SHUSEI[B.body[k].star]) + '</span><br><span class="small muted">← ' + esc(B.body[k].from) + '</span></td></tr>';
+    }).join('') +
+    ['shoulder','rightFoot','leftFoot'].map(function (k) {
+      return '<tr><th>' + esc(B.ages[k].pos) + '</th><td><b>' + esc(B.ages[k].star) + '</b> <span class="muted small">' + esc(B.ages[k].years) + '</span><br>' +
+        '<span class="small">' + esc(MDS.TEXT_JUSEI[B.ages[k].star]) + '</span></td></tr>';
+    }).join('') + '</table></div>' +
+    '<h3>位相法</h3><p class="small">' + esc(B.iso.map(function (x) { return x.pair + '：' + x.rel.label; }).join('／') || '目立つ干渉なし') + '</p></div>';
+
+  /* 紫微斗数 */
+  var Z = A.ziwei, zw = '';
+  Z.palaces.forEach(function (p) {
+    var g = ZW_CELL[p.branch];
+    zw += '<div class="cell' + (p.name === '命宮' ? ' ming' : '') + '" style="grid-row:' + g[0] + ';grid-column:' + g[1] + '">' +
+      '<span class="br">' + esc(p.stemName + p.branchName) + '</span>' +
+      '<div class="mj">' + esc(p.majors.map(function (m) { return m.name + '<' + m.bright + '>' + (m.hua ? '化' + m.hua : ''); }).join(' ')) + '</div>' +
+      '<div class="muted">' + esc(p.stars.filter(function (m) { return !m.major; }).map(function (m) { return m.name + (m.hua ? '化' + m.hua : ''); }).join(' ')) + '</div>' +
+      '<div class="pn">' + esc(p.name) + (p.isBody ? '・身宮' : '') + '</div></div>';
+  });
+  zw += '<div class="mid"><b>' + esc(Z.kyoku) + '</b>（' + esc(Z.nayin) + '）<br>' +
+    '命宮 ' + esc(Z.mingName) + '／身宮 ' + esc(Z.shenName) + '<br>' +
+    '旧暦 ' + Z.lunar.year + '年' + (Z.lunar.leap ? '閏' : '') + Z.lunar.month + '月' + Z.lunar.day + '日<br>' +
+    '大限 ' + Z.kyokuNum + '歳起・' + (Z.forward ? '順行' : '逆行') + '<br>' +
+    '<span class="small muted">四化：' + Object.keys(Z.hua).map(function (k) { return k + '化' + Z.hua[k]; }).join('　') + '</span></div>';
+  s += '<div class="card"><h2>紫微斗数</h2><div class="zw">' + zw + '</div>' +
+    (Z.leapNote ? '<p class="note">' + esc(Z.leapNote) + '</p>' : '') +
+    '<h3>命宮の主星</h3>' + (Z.mingPalace.majors.length
+      ? Z.mingPalace.majors.map(function (m) { return '<p class="small"><b>' + esc(m.name) + '（' + esc(m.bright) + '）</b> ' + esc(MDS.TEXT_ZW[m.name]) + '</p>'; }).join('')
+      : '<p class="small">空宮。対宮の星を借りて読みます。</p>') +
+    '<p class="note">廟旺利陥（星の強さ）は流派によって表が異なります。ここでは全書系の一般的な表を使っています。火星・鈴星などの一部の星は実装していません。</p></div>';
+
+  /* 西洋 */
+  var W = A.western;
+  s += '<div class="card"><h2>西洋占星術</h2><div class="scroll"><table><tr><th>天体</th><th>位置</th><th>ハウス</th><th>意味</th></tr>' +
+    W.bodies.map(function (b) {
+      return '<tr><td><b>' + esc(b.name) + '</b>' + (b.retro ? ' <span class="tag bad">R</span>' : '') + '</td><td>' + esc(b.text) + '</td>' +
+        '<td class="num">' + (b.house || '—') + '</td><td class="small muted">' + esc(MDS.TEXT_PLANET[b.name]) + '</td></tr>';
+    }).join('') +
+    W.points.map(function (p) { return '<tr><td><b>' + esc(p.name) + '</b></td><td>' + esc(p.text) + '</td><td></td><td></td></tr>'; }).join('') +
+    '</table></div>' +
+    '<h3>ハウスカスプ（' + esc(W.houses.system) + '）</h3><p class="small muted">' +
+    W.houses.cusps.map(function (x, i) { return (i + 1) + ': ' + MDS.fmtLon(x); }).join('　') + '</p>' +
+    '<h3>アスペクト</h3><div class="scroll"><table><tr><th>組</th><th>種類</th><th>オーブ</th></tr>' +
+    W.aspects.sort(function (a, b) { return a.orb - b.orb; }).map(function (a) {
+      return '<tr><td>' + esc(a.a + ' — ' + a.b) + '</td><td>' + esc(a.name) + '</td><td class="num">' + a.orb.toFixed(2) + '°</td></tr>';
+    }).join('') + '</table></div>' +
+    '<h3>エレメント／クオリティ</h3><p class="small">' +
+    Object.keys(W.elements).map(function (k) { return k + ' ' + W.elements[k].toFixed(1); }).join('　') + '　｜　' +
+    Object.keys(W.modes).map(function (k) { return k + ' ' + W.modes[k].toFixed(1); }).join('　') + '</p></div>';
+
+  /* インド・宿曜・数秘・九星 */
+  var V = A.vedic, N = A.numerology, K = A.kigaku;
+  s += '<div class="card"><h2>インド占星術・宿曜</h2>' +
+    '<p class="kv"><b>月のラーシ</b> ' + esc(V.rashi) + '　<b>太陽のラーシ</b> ' + esc(V.sunRashi) + '</p>' +
+    '<p class="kv"><b>ナクシャトラ</b> ' + esc(V.nakshatra) + '（第 ' + V.pada + ' パダ）　<b>宿曜</b> ' + esc(V.shuku) + '</p>' +
+    '<p class="kv muted small">アヤナムシャ（ラヒリ）' + V.ayanamsa.toFixed(3) + '°</p></div>';
+  s += '<div class="card"><h2>数秘術</h2><div class="scroll"><table>' +
+    '<tr><th>ライフパス</th><td><b>' + N.lifePath + '</b> ' + esc(N.lifePathText) + '</td></tr>' +
+    '<tr><th>バースデー</th><td>' + N.birthday + '（' + N.birthdayRaw + ' 日生まれ）</td></tr>' +
+    (N.destiny ? '<tr><th>運命数</th><td>' + N.destiny + '</td></tr>' +
+      '<tr><th>ソウル数</th><td>' + N.soul + '</td></tr><tr><th>人格数</th><td>' + N.persona + '</td></tr>' +
+      '<tr><th>成熟数</th><td>' + N.maturity + '</td></tr>' : '<tr><th>名前系</th><td class="muted">ローマ字の名前を入れると算出されます</td></tr>') +
+    '<tr><th>チャレンジ</th><td>' + N.challenge.join('・') + '</td></tr></table></div></div>';
+  s += '<div class="card"><h2>九星気学</h2>' +
+    '<p class="kv"><b>本命星</b> ' + esc(K.honmeiName) + '　<b>月命星</b> ' + esc(K.getsuName) + '　<b>傾斜</b> ' + esc(K.keishaName) + '</p>' +
+    '<p class="small">' + esc(MDS.TEXT_KYUSEI[K.honmei]) + '</p>' +
+    '<p class="small muted">※本命星は立春を年の境として決めています（1〜2月上旬生まれは前年の星）。</p></div>';
+
+  /* 暦の生データ */
+  s += '<div class="card"><h2>計算に使った暦データ</h2><div class="scroll"><table>' +
+    '<tr><th>入力</th><td>' + A.birth.y + '-' + A.birth.m + '-' + A.birth.d + ' ' +
+      (P.hasHour ? pad(A.birth.hour) + ':' + pad(A.birth.minute) : '時刻不明') + '　UTC' + (A.birth.tz >= 0 ? '+' : '') + A.birth.tz +
+      '　緯度 ' + A.birth.lat + '／経度 ' + A.birth.lon + '</td></tr>' +
+    '<tr><th>ユリウス日(UT)</th><td>' + A.birth.jdUT.toFixed(5) + '</td></tr>' +
+    '<tr><th>節入り</th><td>' + esc(P.termName) + ' から ' + P.daysFromTerm.toFixed(2) + ' 日</td></tr>' +
+    '<tr><th>真太陽時の補正</th><td>' + (A.birth.trueSolarTime ? (P.solarTimeShiftMin >= 0 ? '+' : '') + P.solarTimeShiftMin + ' 分（経度差＋均時差）' : '補正なし（時計時刻をそのまま使用）') + '</td></tr>' +
+    '<tr><th>旧暦</th><td>' + A.lunar.year + ' 年 ' + (A.lunar.leap ? '閏' : '') + A.lunar.month + ' 月 ' + A.lunar.day + ' 日</td></tr>' +
+    '<tr><th>節年（立春基準）</th><td>' + P.solarYear + ' 年</td></tr>' +
+    '</table></div></div>';
+  c.innerHTML = s; return c;
+}
+function pad(n) { return (n < 10 ? '0' : '') + n; }
+function cell(o, main) {
+  return '<div class="c' + (main ? ' main' : '') + '"><span class="s">' + esc(o.star) + '</span>' +
+    '<span class="l">' + esc(o.pos) + '</span></div>';
+}
+
+/* --- タブと起動 -----------------------------------------------------------*/
+var TABS = [
+  ['魂の設計図', renderBlueprint], ['人生テーマ', renderThemes], ['運命サイクル', renderCycles],
+  ['人生年表', renderChrono], ['未来シミュレーター', null], ['人間関係', renderRelation], ['命式データ', renderRaw]
+];
+function show(A) {
+  var out = $('out'); out.innerHTML = '';
+  var head = el('div', 'card');
+  head.innerHTML = '<h2>命式サマリー</h2><div class="pillars">' +
+    '<div class="h"></div><div class="h">年柱</div><div class="h">月柱</div><div class="h">日柱</div><div class="h">時柱</div>' +
+    '<div class="h">干支</div>' +
+    '<div class="gz">' + esc(A.pillars.year.name) + '</div><div class="gz">' + esc(A.pillars.month.name) + '</div>' +
+    '<div class="gz">' + esc(A.pillars.day.name) + '</div><div class="gz">' + (A.pillars.hasHour ? esc(A.pillars.hour.name) : '—') + '</div></div>' +
+    '<p class="kv" style="margin-top:10px">' +
+    '<span class="tag">' + esc(A.strength.kakkyoku) + '</span>' +
+    '<span class="tag">身' + (A.strength.strong ? '強' : '弱') + '</span>' +
+    '<span class="tag">' + esc(A.kigaku.honmeiName) + '</span>' +
+    '<span class="tag">' + esc(A.western.sunSign) + '／月' + esc(A.western.moonSign) + (A.western.ascSign ? '／ASC' + esc(A.western.ascSign) : '') + '</span>' +
+    '<span class="tag">LP' + A.numerology.lifePath + '</span>' +
+    '<span class="tag">' + esc(A.sanmei.mainStar) + '</span>' +
+    '<span class="tag">' + esc(A.ziwei.mingPalace.majors.map(function (m) { return m.name; }).join('') || '命宮空宮') + '</span>' +
+    '<span class="tag bad">' + esc(A.sanmei.tenchusatsu.day) + '</span></p>';
+  out.appendChild(head);
+
+  var nav = el('div', 'tabs'), body = el('div');
+  var thisYear = new Date().getFullYear();
+  TABS.forEach(function (t, i) {
+    var b = el('button', i === 0 ? 'on' : '', t[0]);
+    b.onclick = function () {
+      Array.prototype.forEach.call(nav.children, function (x) { x.className = ''; });
+      b.className = 'on'; body.innerHTML = '';
+      body.appendChild(t[1] ? t[1](A) : renderFuture(A, thisYear));
+      body.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    nav.appendChild(b);
+  });
+  out.appendChild(nav); out.appendChild(body);
+  body.appendChild(TABS[0][1](A));
+}
+function run() {
+  var noh = $('nohour').checked;
+  var A = MDS.analyze({
+    y: +$('y').value, m: +$('mo').value, d: +$('d').value,
+    hour: +$('hh').value, minute: +$('mi').value, hasHour: !noh,
+    tz: +$('tz').value, lat: +$('lat').value, lon: +$('lon').value,
+    sex: $('sex').value, blood: $('blood').value, name: $('name').value,
+    trueSolarTime: $('tst').checked, lateNightNextDay: $('late').checked,
+    houseSystem: $('house').value
+  });
+  show(A);
+}
+var sel = $('place');
+fillPlaces(sel, 13);
+sel.onchange = function () {
+  var p = PLACES[+sel.value]; if (p.length === 1) return;
+  $('lat').value = p[1]; $('lon').value = p[2]; $('tz').value = p[3];
+};
+$('nohour').onchange = function () { $('hh').disabled = $('mi').disabled = this.checked; };
+$('run').onclick = run;
+run();
+})();
+</script>
+</body>
+</html>
