@@ -92,6 +92,11 @@
   .body9 .c .l { color: var(--muted); font-size: 10.5px; }
   .body9 .c.blank { border: none; }
 
+  .cardback {
+    width: 92px; height: 148px; margin: 0 auto; border-radius: 10px;
+    border: 1px solid var(--accent); background: var(--soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center; font-size: 30px;
+  }
   svg { display: block; max-width: 100%; }
   .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
   footer { margin-top: 34px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
@@ -1889,6 +1894,16 @@ var SUIT_OVERRIDE = {
   'ペンタクル': { 5:-1.5 },
   'ワンド':   { 5:-0.5, 10:-1.0 }
 };
+/* 保存用に札は通し番号で扱う (fullDeck の並びは固定: 大アルカナ 0-21、以降スート順) */
+function cardByIndex(i) { return fullDeck()[i]; }
+function randomCard() {
+  var r = new Array(2);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    var a = new Uint32Array(2); crypto.getRandomValues(a);
+    r[0] = a[0] / 4294967296; r[1] = a[1] / 4294967296;
+  } else { r[0] = Math.random(); r[1] = Math.random(); }
+  return { i: Math.floor(r[0] * 78), rev: r[1] < 0.35 };
+}
 function cardPolarity(card, reversed) {
   var v = card.major ? MAJOR_POLARITY[card.num] : RANK_POLARITY[card.num - 1];
   if (!card.major) { var o = SUIT_OVERRIDE[card.suit]; if (o && o[card.num] !== undefined) v = o[card.num]; }
@@ -1969,7 +1984,7 @@ function dayContext(y, m, d, tz) {
 /* --- 合成 ----------------------------------------------------------------*/
 var DAY_W = { nichiun:1.2, stage:0.7, kubou:0.8, kyusei:0.8, numer:0.5,
               tsukiun:0.7, nenun:0.6, transit:0.7, choku:0.4, rokuyou:0.25, tarot:0.9 };
-function dayFortune(ctx, y, m, d) {
+function dayFortune(ctx, y, m, d, drawn) {
   var tz = ctx.birth.tz, D = dayContext(y, m, d, tz), P = ctx.pillars, st = ctx.strength, out = [];
 
   /* 日運 */
@@ -2040,11 +2055,15 @@ function dayFortune(ctx, y, m, d) {
   out.push({ key:'rokuyou', label:'六曜 ' + rk, score: ROKUYOU_INFO[rk][0], w: DAY_W.rokuyou,
              detail: ROKUYOU_INFO[rk][1] + '（六曜は暦の月日から機械的に決まる約束事なので、重みは小さくしています）' });
 
-  /* タロット 1 枚 */
-  var pick = drawSpread(ctx.tarot.seed + '@' + y + '-' + m + '-' + d, 1)[0];
-  var pol = cardPolarity(pick.card, pick.reversed);
-  out.push({ key:'tarot', label:'今日の 1 枚 ' + pick.card.name + (pick.reversed ? '（逆位置）' : ''),
-             score: pol * 20, w: DAY_W.tarot, detail: cardReading(pick.card, pick.reversed) });
+  /* タロット 1 枚。まだ引いていない日は項ごと落とし、残りで重みを割り直す */
+  var card = null;
+  if (drawn) {
+    var cd = cardByIndex(drawn.i), rev = !!drawn.rev, pol = cardPolarity(cd, rev);
+    card = { name: cd.name, reversed: rev, polarity: pol, major: cd.major,
+             text: cardReading(cd, rev), contribution: pol * 20 };
+    out.push({ key:'tarot', label:'今日の 1 枚 ' + cd.name + (rev ? '（逆位置）' : ''),
+               score: pol * 20, w: DAY_W.tarot, detail: cardReading(cd, rev) });
+  }
 
   var sum = 0, wsum = 0;
   out.forEach(function (x) { sum += x.score * x.w; wsum += x.w; });
@@ -2059,8 +2078,7 @@ function dayFortune(ctx, y, m, d) {
     date: D, score: score, ganzhi: D.name, tenGod: tg, stage: stage, kubou: ku,
     choku: ch, chokuText: CHOKU_INFO[ch][1], rokuyou: rk, rokuyouText: ROKUYOU_INFO[rk][1],
     lunar: D.lunar, nineStar: nd, moonSign: SIGNS[signOf(tMoon)],
-    card: { name: pick.card.name, reversed: pick.reversed, polarity: pol,
-            text: cardReading(pick.card, pick.reversed), major: pick.card.major },
+    card: card, pending: !card,
     components: out, directions: dirs, driver: sorted[0],
     verdict: score >= 50 ? '攻めていい日。動かすなら今日。'
       : score >= 20 ? '追い風。予定を前に倒す価値がある。'
@@ -2075,6 +2093,7 @@ return {
   /* 解析 */
   analyze: analyze, futureSim: futureSim, lifeTimeline: lifeTimeline, monthScores: monthScores,
   dayFortune: dayFortune, dayContext: dayContext, nineStarDay: nineStarDay, DAY_W: DAY_W,
+  randomCard: randomCard, cardByIndex: cardByIndex, hash: function (t) { return hash32(t)().toString(36); },
   yearScore: yearScore, yearComponents: yearComponents, compatibility: compatibility, pairYears: pairYears,
   drawSpread: drawSpread, directions: directions,
   /* 個別エンジン (単体でも使える) */
@@ -2606,37 +2625,69 @@ function cell(o, main) {
 }
 
 /* --- セクション: 今日の運勢 -----------------------------------------------*/
+/* 「今日の 1 枚」は当日その場で引く。引いた結果は localStorage に
+   〈出生データのハッシュ〉+〈日付〉をキーにして保存し、その日は引き直せない。 */
+var memStore = {};
+function lsGet(k) { try { var v = localStorage.getItem(k); return v === null ? (memStore[k] || null) : v; }
+                    catch (e) { return memStore[k] || null; } }
+function lsSet(k, v) { memStore[k] = v; try { localStorage.setItem(k, v); } catch (e) {} }
+function lsOK() { try { localStorage.setItem('mds:t', '1'); localStorage.removeItem('mds:t'); return true; } catch (e) { return false; } }
+function personKey(A) {
+  var b = A.birth;
+  return 'mds:card:' + MDS.hash([b.y, b.m, b.d, b.hour, b.minute, b.hasHour, b.name, b.tz, b.lat, b.lon].join('|'));
+}
+function ymd(dt) { return dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' + pad(dt.getDate()); }
+
 function renderToday(A) {
-  var c = el('div'), cur = new Date();
+  var c = el('div'), cur = new Date(), pk = personKey(A), storageOK = lsOK();
   function draw() {
     var y = cur.getFullYear(), m = cur.getMonth() + 1, d = cur.getDate();
-    var F = MDS.dayFortune(A, y, m, d);
+    var key = pk + ':' + ymd(cur), isToday = ymd(cur) === ymd(new Date());
+    var saved = null;
+    try { saved = JSON.parse(lsGet(key)); } catch (e) { saved = null; }
+    var F = MDS.dayFortune(A, y, m, d, saved);
     var wd = '日月火水木金土'[cur.getDay()];
+
     var s = '<div class="card"><h2>今日の運勢</h2>' +
       '<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:12px">' +
       '<button class="mini" id="prev">◀ 前日</button>' +
-      '<div style="max-width:180px"><input id="dt" type="date" value="' +
-        y + '-' + pad(m) + '-' + pad(d) + '"></div>' +
+      '<div style="max-width:180px"><input id="dt" type="date" value="' + ymd(cur) + '"></div>' +
       '<button class="mini" id="next">翌日 ▶</button>' +
       '<button class="mini" id="today">今日</button></div>' +
       '<h3>' + y + ' 年 ' + m + ' 月 ' + d + ' 日（' + wd + '）　' +
-        esc(F.ganzhi) + 'の日　総合 ' + F.score.toFixed(0) + '</h3>' + gauge(F.score) +
+        esc(F.ganzhi) + 'の日　総合 ' + F.score.toFixed(0) +
+        (F.pending ? ' <span class="tag bad">タロット未反映</span>' : '') + '</h3>' + gauge(F.score) +
       '<p class="lead" style="margin-top:10px">' + esc(F.verdict) + '</p>' +
-      '<p class="small muted">いちばん効いているのは「' + esc(F.driver.label) + '」。</p></div>';
+      '<p class="small muted">いちばん効いているのは「' + esc(F.driver.label) + '」。' +
+      (F.pending ? 'まだ札を引いていないので、この数字はタロット抜きの暫定値です。' : '') + '</p></div>';
 
-    /* タロット */
-    var pol = F.card.polarity;
-    s += '<div class="card"><h2>今日の 1 枚</h2>' +
-      '<p class="lead"><b>' + esc(F.card.name) + (F.card.reversed ? '（逆位置）' : '') + '</b>' +
-      '<span class="tag ' + (pol > 0.2 ? 'good' : pol < -0.2 ? 'bad' : '') + '">極性 ' +
-      (pol > 0 ? '+' : '') + pol.toFixed(1) + '</span></p>' +
-      '<p class="small">' + esc(F.card.text) + '</p>' +
-      '<p class="note">この 1 枚は飾りではなく、下の合成に <b>' + (pol * 20 > 0 ? '+' : '') +
-      (pol * 20).toFixed(0) + '（重み ' + MDS.DAY_W.tarot.toFixed(2) + '）</b>として実際に入っています。' +
-      '出生データと日付をシードにした決定論的シャッフルなので、同じ日は何度開いても同じ札です。' +
-      '逆位置は符号を反転したうえで 0.6 倍しています（正反対ではなく、滞りや遅れとして読む慣例に合わせるため）。</p></div>';
+    /* --- タロット --- */
+    s += '<div class="card"><h2>今日の 1 枚</h2>';
+    if (F.card) {
+      var pol = F.card.polarity;
+      s += '<p class="lead"><b>' + esc(F.card.name) + (F.card.reversed ? '（逆位置）' : '') + '</b>' +
+        '<span class="tag ' + (pol > 0.2 ? 'good' : pol < -0.2 ? 'bad' : '') + '">極性 ' +
+        (pol > 0 ? '+' : '') + pol.toFixed(1) + '</span></p>' +
+        '<p class="small">' + esc(F.card.text) + '</p>' +
+        '<p class="note">この 1 枚は飾りではなく、下の合成に <b>' + (F.card.contribution > 0 ? '+' : '') +
+        F.card.contribution.toFixed(0) + '（重み ' + MDS.DAY_W.tarot.toFixed(2) + '）</b>として実際に入っています。' +
+        '逆位置は符号を反転したうえで 0.6 倍しています（正反対ではなく、滞りや遅れとして読む慣例に合わせるため）。</p>' +
+        '<p class="note">この札は ' + esc(ymd(cur)) + ' に引いたものです。引き直しはできません。' +
+        (isToday ? '日付が変われば、また 1 枚引けます。' : '') + '</p>';
+    } else if (isToday) {
+      s += '<div style="text-align:center;padding:14px 0">' +
+        '<div class="cardback">✦</div>' +
+        '<button class="go" id="pick" style="max-width:280px;margin:14px auto 0">今日の 1 枚を引く</button></div>' +
+        '<p class="note">引けるのは 1 日 1 回だけです。引いた札はこの端末に保存され、その日のうちは引き直せません。' +
+        '出た札の極性が、上の総合スコアに加算されます。</p>' +
+        (storageOK ? '' : '<p class="warn">このブラウザでは保存領域が使えないため、ページを閉じると引いた札は消えます。</p>');
+    } else {
+      s += '<p class="small muted">この日は引いていません。札を引けるのは当日だけです。</p>' +
+        '<p class="note">上の総合スコアは、タロットを除いた要素だけで計算しています。</p>';
+    }
+    s += '</div>';
 
-    /* 暦注 */
+    /* --- 暦注 --- */
     s += '<div class="card"><h2>今日の暦</h2><div class="scroll"><table>' +
       '<tr><th>日干支</th><td>' + esc(F.ganzhi) + '（日主から見て <b>' + esc(F.tenGod) + '</b>）</td></tr>' +
       '<tr><th>十二運</th><td>' + esc(F.stage) + '</td></tr>' +
@@ -2648,16 +2699,18 @@ function renderToday(A) {
       '<tr><th>月の運行</th><td>トランジットの月は' + esc(F.moonSign) + '</td></tr>' +
       '</table></div></div>';
 
-    /* 内訳 */
+    /* --- 内訳 --- */
     s += '<div class="card"><h2>内訳</h2><div class="scroll"><table><tr><th>要素</th><th>スコア</th><th>重み</th><th>補足</th></tr>';
     F.components.forEach(function (x) {
       s += '<tr><td>' + esc(x.label) + '</td><td class="num ' + (x.score > 0 ? 'pos' : x.score < 0 ? 'neg' : '') + '">' +
         (x.score > 0 ? '+' : '') + x.score.toFixed(0) + '</td><td class="num muted">×' + x.w.toFixed(2) + '</td>' +
         '<td class="small muted">' + esc(x.detail || '') + '</td></tr>';
     });
+    if (F.pending) s += '<tr><td class="muted">今日の 1 枚</td><td class="num muted">—</td>' +
+      '<td class="num muted">×' + MDS.DAY_W.tarot.toFixed(2) + '</td><td class="small muted">未着。引くとここに加わり、総合が動きます</td></tr>';
     s += '</table></div></div>';
 
-    /* 方位 */
+    /* --- 方位 --- */
     s += '<div class="card"><h2>今日の方位（日盤）</h2>' +
       '<p class="small"><b>吉方位：</b>' + esc(F.directions.good.map(function (g) { return g.dir + '（' + g.star + '／' + g.why + '）'; }).join('、') || 'この日は該当なし') + '</p>' +
       '<p class="small"><b>凶方位：</b>' + esc(F.directions.bad.map(function (g) { return g.dir + '（' + g.why + '）'; }).join('、')) + '</p>' +
@@ -2672,6 +2725,13 @@ function renderToday(A) {
     q('dt').onchange = function () {
       var v = this.value.split('-');
       if (v.length === 3) { cur = new Date(+v[0], +v[1] - 1, +v[2]); draw(); }
+    };
+    var pick = q('pick');
+    if (pick) pick.onclick = function () {
+      if (lsGet(key)) { draw(); return; }              /* 別タブで先に引かれていた場合 */
+      lsSet(key, JSON.stringify(MDS.randomCard()));
+      draw();
+      var t = c.querySelector('.cardback'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
   }
   draw();
