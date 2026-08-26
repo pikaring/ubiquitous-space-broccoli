@@ -92,10 +92,23 @@
   .body9 .c .l { color: var(--muted); font-size: 10.5px; }
   .body9 .c.blank { border: none; }
 
+  .tcard { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+  .tcard .pic { flex: 0 0 auto; }
+  .tcard .body { flex: 1 1 240px; min-width: 220px; }
+  img.tarot {
+    display: block; width: 150px; max-width: 40vw; border-radius: 8px;
+    border: 1px solid var(--line); background: #fff;
+  }
+  img.tarot.rev { transform: rotate(180deg); }
+  .spread { display: flex; gap: 12px; flex-wrap: wrap; }
+  .spread figure { margin: 0; flex: 1 1 140px; max-width: 190px; }
+  .spread figure img.tarot { width: 100%; max-width: none; }
+  .spread figcaption { font-size: 12px; color: var(--muted); margin-top: 5px; }
+  /* 実際の札と同じ寸法にしておき、引いた瞬間にレイアウトが跳ねないようにする */
   .cardback {
-    width: 92px; height: 148px; margin: 0 auto; border-radius: 10px;
+    width: 150px; height: 258px; margin: 0 auto; border-radius: 8px;
     border: 1px solid var(--accent); background: var(--soft); color: var(--accent);
-    display: flex; align-items: center; justify-content: center; font-size: 30px;
+    display: flex; align-items: center; justify-content: center; font-size: 34px;
   }
   svg { display: block; max-width: 100%; }
   .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
@@ -110,7 +123,8 @@
 <header>
   <h1>Meta Destiny System</h1>
   <p>四柱推命・算命学・紫微斗数・西洋占星術・インド占星術・数秘術・九星気学・宿曜・タロットを、
-     ひとつの共通軸に写像して統合する運命解析エンジン。計算はすべてこのページの中で完結します。</p>
+     ひとつの共通軸に写像して統合する運命解析エンジン。計算はすべてこのページの中で完結し、
+     外部サービスへの通信はありません。</p>
 </header>
 
 <div class="card">
@@ -157,6 +171,10 @@
   <p><b>免責</b>：占術は科学的に検証された予測手法ではありません。ここで行っているのは、
      各流派の<b>算法（暦計算と記号の割り当て）を忠実に実装し、その出力を機械的に統合する</b>ことであって、
      結果が当たることの保証ではありません。医療・法律・投資など重要な判断の材料にはしないでください。</p>
+  <p>タロット画像は Rider–Waite–Smith 版（1909 年、Pamela Colman Smith 画）です。
+     作者の没後 70 年以上が経過したパブリックドメインで、Wikimedia Commons から取得したものを
+     縮小してこのリポジトリに同梱しています（外部サイトへは接続しません）。対応表は
+     <a href="tarot/CREDITS.md">tarot/CREDITS.md</a>。</p>
   <p>暦・天文計算は Jean Meeus "Astronomical Algorithms"、VSOP87、JPL 近似軌道要素に基づく実装です。
      ソースは <a href="https://github.com/pikaring/ubiquitous-space-broccoli">GitHub</a>。</p>
 </footer>
@@ -1213,11 +1231,13 @@ var MAJOR = ['愚者','魔術師','女教皇','女帝','皇帝','教皇','恋人
              '吊るされた男','死神','節制','悪魔','塔','星','月','太陽','審判','世界'];
 var SUITS = [['ワンド', '火'], ['カップ', '水'], ['ソード', '風'], ['ペンタクル', '地']];
 var RANKS = ['エース','2','3','4','5','6','7','8','9','10','ペイジ','ナイト','クイーン','キング'];
+/* i は tarot/NN.jpg の番号でもある（CREDITS.md に原本との対応表） */
 function fullDeck() {
   var d = [];
-  for (var i = 0; i < 22; i++) d.push({ name: MAJOR[i], major: true, num: i, elem: null });
+  for (var i = 0; i < 22; i++) d.push({ name: MAJOR[i], major: true, num: i, elem: null, i: i });
   for (var s = 0; s < 4; s++) for (var r = 0; r < 14; r++)
-    d.push({ name: SUITS[s][0] + 'の' + RANKS[r], major: false, suit: SUITS[s][0], elem: SUITS[s][1], num: r + 1 });
+    d.push({ name: SUITS[s][0] + 'の' + RANKS[r], major: false, suit: SUITS[s][0],
+             elem: SUITS[s][1], num: r + 1, i: 22 + s * 14 + r });
   return d;
 }
 function hash32(str) {                                        // xmur3
@@ -1860,7 +1880,7 @@ function futureSim(ctx, year) {
     year: year, score: ys.score, age: ys.age, components: ys.components, months: ms.months,
     best: best.slice(0, 3), worst: best.slice(-2).reverse(),
     directions: dir,
-    tarot: tarot.map(function (t, i) { return { pos: pos[i], card: t.card.name, reversed: t.reversed,
+    tarot: tarot.map(function (t, i) { return { pos: pos[i], card: t.card.name, reversed: t.reversed, index: t.card.i,
       text: t.card.major ? MAJOR_TEXT[t.card.num] : (t.card.suit + '＝' + t.card.elem + 'の領域。' +
         (t.card.num <= 10 ? '段階 ' + t.card.num : '人物カード')) }; }),
     verdict: ys.score >= 45 ? '攻めの年。動かすなら今。' : ys.score >= 15 ? '追い風寄り。準備してきたことを出す年。'
@@ -2154,7 +2174,7 @@ function dayFortune(ctx, y, m, d, drawn, noDist) {
   var card = null;
   if (drawn) {
     var cd = cardByIndex(drawn.i), rev = !!drawn.rev, pol = cardPolarity(cd, rev);
-    card = { name: cd.name, reversed: rev, polarity: pol, major: cd.major,
+    card = { name: cd.name, reversed: rev, polarity: pol, major: cd.major, index: cd.i,
              text: cardReading(cd, rev), contribution: pol * 20 };
     out.push({ key:'tarot', label:'今日の 1 枚 ' + cd.name + (rev ? '（逆位置）' : ''),
                score: pol * 20, w: DAY_W.tarot, detail: cardReading(cd, rev) });
@@ -2387,7 +2407,7 @@ function renderBlueprint(A) {
     A.consensus.conflicts.forEach(function (x) { s += '<p class="small">・' + esc(x.text) + '</p>'; });
     s += '<p class="note">統合はここを平均で埋めますが、実際には「状況次第で出る面」として扱うほうが実態に近いはずです。</p></div>';
   }
-  c.innerHTML = s; return c;
+  c.innerHTML = s; wireImgs(c); return c;
 }
 
 /* --- セクション: 人生テーマ -----------------------------------------------*/
@@ -2395,17 +2415,20 @@ function renderThemes(A) {
   var c = el('div'), s = '<div class="card"><h2>人生テーマ</h2>';
   A.themes.forEach(function (t) { s += '<h3>' + esc(t.title) + '</h3><p class="small">' + esc(t.body) + '</p>'; });
   s += '</div>';
-  s += '<div class="card"><h2>誕生カード</h2>' +
-    '<p class="lead"><b>' + esc(A.tarot.birth.card) + '</b>（ソウルカード：' + esc(A.tarot.birth.soulCard) + '）</p>' +
+  s += '<div class="card"><h2>誕生カード</h2><div class="tcard">' +
+    '<div class="pic">' + cardImg(A.tarot.birth.num, false) + '</div><div class="body">' +
+    '<p class="lead" style="margin-top:0"><b>' + esc(A.tarot.birth.card) + '</b>（ソウルカード：' +
+    esc(A.tarot.birth.soulCard) + '）</p>' +
     '<p class="small">' + esc(A.tarot.birthText) + '</p>' +
-    '<p class="note">生年月日の数値から一意に決まるカードで、引き直しても変わりません。</p></div>';
+    '<p class="note">生年月日の数値から一意に決まるカードで、引き直しても変わりません。</p>' +
+    '</div></div></div>';
   s += '<div class="card"><h2>手薄な軸を補う具体策</h2><div class="scroll"><table><tr><th>軸</th><th>足りない理由</th><th>補い方</th></tr>';
   A.consensus.bottom.forEach(function (r) {
     s += '<tr><td><b>' + esc(r.drive.short) + '</b></td><td class="small">' + r.votes + ' 流派しか拾わなかった（' + r.pct.toFixed(1) + '%）</td>' +
       '<td class="small">' + esc(SUPPLY[r.drive.id]) + '</td></tr>';
   });
   s += '</table></div></div>';
-  c.innerHTML = s; return c;
+  c.innerHTML = s; wireImgs(c); return c;
 }
 var SUPPLY = {
  1:'決定権のある小さな役割を引き受ける。人数の少ない場で先に手を挙げる。',
@@ -2465,7 +2488,7 @@ function renderCycles(A) {
   }
   s += '<div class="card"><h2>天中殺の年</h2><p class="small">' + esc(A.sanmei.tenchusatsu.day) + '。以下の年は結果を求めず、仕込み・整理・学習に使う期間とされます。</p>' +
     '<p class="small muted">' + esc(tc.join('、')) + '</p></div>';
-  c.innerHTML = s; return c;
+  c.innerHTML = s; wireImgs(c); return c;
 }
 function daiunNote(A, L) {
   var f = A.strength.favorNames;
@@ -2517,12 +2540,17 @@ function renderFuture(A, year) {
       '<p class="small"><b>凶方位：</b>' + esc(F.directions.bad.map(function (g) { return g.dir + '（' + g.why + '）'; }).join('、')) + '</p>' +
       '<p class="note">吉方位は本命星を生じる星・同じ五行の星・月命星と同会する方位から、五黄殺・暗剣殺・本命殺・本命的殺・歳破を除いたものです。</p></div>';
 
-    s += '<div class="card"><h2>' + y + ' 年のタロット</h2><div class="scroll"><table>';
+    s += '<div class="card"><h2>' + y + ' 年のタロット</h2><div class="spread">';
     F.tarot.forEach(function (t) {
-      s += '<tr><th style="width:26%">' + esc(t.pos) + '</th><td><b>' + esc(t.card) + (t.reversed ? '（逆位置）' : '') + '</b><br><span class="small muted">' + esc(t.text) + '</span></td></tr>';
+      s += '<figure>' + cardImg(t.index, t.reversed) + '<figcaption><b>' + esc(t.pos) + '</b><br>' +
+        esc(t.card) + (t.reversed ? '（逆位置）' : '') + '</figcaption></figure>';
+    });
+    s += '</div><div class="scroll" style="margin-top:10px"><table>';
+    F.tarot.forEach(function (t) {
+      s += '<tr><th style="width:26%">' + esc(t.pos) + '</th><td class="small muted">' + esc(t.text) + '</td></tr>';
     });
     s += '</table></div><p class="note">出生データと対象年をシードにした決定論的シャッフルです。同じ入力なら何度引いても同じ札が出ます。</p></div>';
-    c.innerHTML = s;
+    c.innerHTML = s; wireImgs(c);
     /* このノードはまだ document に入っていないので c の中から引く */
     c.querySelector('#simgo').onclick = function () {
       draw(parseInt(c.querySelector('#simy').value, 10) || y);
@@ -2551,7 +2579,7 @@ function renderChrono(A) {
       '<td><span class="tag' + (m.type === '天中殺' ? ' bad' : '') + '">' + esc(m.type) + '</span></td><td class="small">' + esc(m.text) + '</td></tr>';
   });
   s += '</table></div></div>';
-  c.innerHTML = s; return c;
+  c.innerHTML = s; wireImgs(c); return c;
 }
 
 /* --- セクション: 人間関係 -------------------------------------------------*/
@@ -2734,7 +2762,7 @@ function renderRaw(A) {
     '<tr><th>旧暦</th><td>' + A.lunar.year + ' 年 ' + (A.lunar.leap ? '閏' : '') + A.lunar.month + ' 月 ' + A.lunar.day + ' 日</td></tr>' +
     '<tr><th>節年（立春基準）</th><td>' + P.solarYear + ' 年</td></tr>' +
     '</table></div></div>';
-  c.innerHTML = s; return c;
+  c.innerHTML = s; wireImgs(c); return c;
 }
 function pad(n) { return (n < 10 ? '0' : '') + n; }
 function cell(o, main) {
@@ -2756,6 +2784,17 @@ function personKey(A) {
 }
 function ymd(dt) { return dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' + pad(dt.getDate()); }
 
+/* tarot/NN.jpg は同じリポジトリに同梱している。読めなければ黙って隠し、文章だけ残す */
+function cardImg(index, reversed) {
+  if (index === undefined || index === null) return '';
+  return '<img class="tarot' + (reversed ? ' rev' : '') + '" src="tarot/' + pad(index) +
+    '.jpg" alt="" loading="lazy">';
+}
+function wireImgs(root) {
+  Array.prototype.forEach.call(root.querySelectorAll('img.tarot'), function (im) {
+    im.onerror = function () { this.style.display = 'none'; };
+  });
+}
 function levelBar(F) {
   var pos = (F.percentile * 100).toFixed(1);
   var seg = [[10,'var(--bad)'],[22,'#c9a227'],[36,'var(--muted)'],[22,'#7aa87a'],[10,'var(--good)']];
@@ -2797,10 +2836,12 @@ function renderToday(A) {
     s += '<div class="card"><h2>今日の 1 枚</h2>';
     if (F.card) {
       var pol = F.card.polarity;
-      s += '<p class="lead"><b>' + esc(F.card.name) + (F.card.reversed ? '（逆位置）' : '') + '</b>' +
+      s += '<div class="tcard"><div class="pic">' + cardImg(F.card.index, F.card.reversed) + '</div>' +
+        '<div class="body">' +
+        '<p class="lead" style="margin-top:0"><b>' + esc(F.card.name) + (F.card.reversed ? '（逆位置）' : '') + '</b>' +
         '<span class="tag ' + (pol > 0.2 ? 'good' : pol < -0.2 ? 'bad' : '') + '">極性 ' +
         (pol > 0 ? '+' : '') + pol.toFixed(1) + '</span></p>' +
-        '<p class="small">' + esc(F.card.text) + '</p>' +
+        '<p class="small">' + esc(F.card.text) + '</p></div></div>' +
         '<p class="note">この 1 枚は飾りではなく、下の合成に <b>' + (F.card.contribution > 0 ? '+' : '') +
         F.card.contribution.toFixed(0) + '（重み ' + MDS.DAY_W.tarot.toFixed(2) + '）</b>として実際に入っています。' +
         '逆位置は符号を反転したうえで 0.6 倍しています（正反対ではなく、滞りや遅れとして読む慣例に合わせるため）。</p>' +
@@ -2859,7 +2900,7 @@ function renderToday(A) {
       '<p class="note">日盤は「冬至にもっとも近い甲子日から陽遁、夏至にもっとも近い甲子日から陰遁」という一般則で算出しています。' +
       '置閏法（閏の入れ方）は流派差が大きいため入れていません。</p></div>';
 
-    c.innerHTML = s;
+    c.innerHTML = s; wireImgs(c);
     var q = function (id) { return c.querySelector('#' + id); };
     q('prev').onclick = function () { cur.setDate(cur.getDate() - 1); draw(); };
     q('next').onclick = function () { cur.setDate(cur.getDate() + 1); draw(); };
