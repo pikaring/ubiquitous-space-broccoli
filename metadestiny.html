@@ -1959,6 +1959,11 @@ var CHOKU_INFO = {
 var KYUSEI_DAY = { '中央':'動きが大きく、目立つ日', '北':'表に出ないほうが進む日', '北東':'切り替え・片づけの日',
   '東':'動き出しに向く日', '南東':'人との縁が広がる日', '南':'人目に触れ、評価される日',
   '南西':'地道な作業がはかどる日', '西':'楽しみごと・受け取りの日', '北西':'決断と責任の日' };
+var KYUSEI_DAY_NEG = { '中央':'注目は集まるが負荷も集まる。抱え込みすぎない', '北':'表に出しても通りにくい。仕込みに回す',
+  '北東':'切り替えの途中で足元が定まらない', '東':'先走りやすい。勢いだけで決めない',
+  '南東':'調整ごとに時間を取られやすい', '南':'見られる分、粗も目につきやすい',
+  '南西':'地味な用事が溜まる。片づけ向き', '西':'口が滑りやすい。約束は慎重に',
+  '北西':'責任だけが回ってきやすい' };
 var ROKUYOU = ['大安','赤口','先勝','友引','先負','仏滅'];
 var ROKUYOU_INFO = {
   '大安':[10,'終日よい'], '赤口':[-6,'正午前後のみよい'], '先勝':[3,'午前がよい'],
@@ -1984,7 +1989,94 @@ function dayContext(y, m, d, tz) {
 /* --- 合成 ----------------------------------------------------------------*/
 var DAY_W = { nichiun:1.2, stage:0.7, kubou:0.8, kyusei:0.8, numer:0.5,
               tsukiun:0.7, nenun:0.6, transit:0.7, choku:0.4, rokuyou:0.25, tarot:0.9 };
-function dayFortune(ctx, y, m, d, drawn) {
+/* その人の 1 年分の日運スコア分布。
+   「平常運転」ばかりになるのは、11 要素の加重平均が中央に寄るため。
+   絶対値でバンドを切らず、本人の 1 年のなかでの位置で水準を決める。
+   分布は札を引いていない状態でそろえて作り、実際の札はその中での順位を動かす。 */
+function dayDistribution(ctx, year) {
+  ctx._dist = ctx._dist || {};
+  if (ctx._dist[year]) return ctx._dist[year];
+  var xs = [], sums = {}, n = 0, base = new Date(year, 0, 1);
+  for (var i = 0; i < 365; i++) {
+    var dt = new Date(base.getTime()); dt.setDate(dt.getDate() + i);
+    var F = dayFortune(ctx, dt.getFullYear(), dt.getMonth() + 1, dt.getDate(), null, true);
+    xs.push(F.score); n++;
+    F.components.forEach(function (c) { sums[c.key] = (sums[c.key] || 0) + c.score * c.w; });
+  }
+  var mean = {};
+  for (var k in sums) mean[k] = sums[k] / n;
+  xs.sort(function (a, b) { return a - b; });
+  return (ctx._dist[year] = { scores: xs, mean: mean });
+}
+function percentileOf(xs, v) {
+  var lo = 0, hi = xs.length;
+  while (lo < hi) { var mid = (lo + hi) >> 1; if (xs[mid] < v) lo = mid + 1; else hi = mid; }
+  return lo / xs.length;
+}
+var TONE = { 5:'攻めていい日。', 4:'追い風。', 3:'', 2:'守りに向く日。', 1:'無理をしない日。' };
+/* 日運が主役になる日がいちばん多いので、その日の十神ごとに中身を変える。
+   前者は命式と噛み合っている側、後者はぶつかっている側の出方。 */
+var DAY_TENGOD = {
+ '比肩':['自分で決めて自分で動くと通る日。単独で進められる仕事に寄せる。',
+        '我を通したくなるが、押し切ると角が立つ日。人に確認を取ってから動く。'],
+ '劫財':['人を巻き込むと早い日。声をかける、頼む、共同作業に向く。',
+        '取り分や役割でもめやすい日。貸し借りと安請け合いを避ける。'],
+ '食神':['のびやかに出せる日。食事・楽しみ・つくることに時間を使うと巡りが良くなる。',
+        '楽なほうへ流れやすい日。締切のあるものだけ先に片づける。'],
+ '傷官':['鋭さが冴える日。粗を見つける、直す、作り込むのに向く。',
+        '言葉がきつくなる日。批評は書いても送らず、一晩置く。'],
+ '偏財':['人・物・金が動く日。営業、交渉、外に出る用事に向く。',
+        '手を広げすぎる日。新しい出費と新規の約束は保留にする。'],
+ '正財':['数字と管理が進む日。精算、記録、片づけに向く。',
+        '細かいことが気になりすぎる日。締めるところだけ締めて、あとは流す。'],
+ '偏官':['勝負どころで動ける日。決断と、詰めの作業に向く。',
+        'プレッシャーが重い日。責任を増やさず、いま抱えているものを守る。'],
+ '正官':['筋を通すと通る日。手続き、報告、目上への相談に向く。',
+        '型に縛られて動きにくい日。形式より、実際に必要なことだけ選ぶ。'],
+ '偏印':['独学と発想の日。調べもの、企画、いつもと違うやり方の試行に向く。',
+        '気が散る日。情報を入れすぎず、ひとつに絞る。'],
+ '印綬':['学びと受け取りの日。読む、教わる、整理して身につけるのに向く。',
+        '受け身になりすぎる日。自分から動かないと何も進まない。']
+};
+var LEVEL_NAME = { 5:'絶好調', 4:'good', 3:'平常', 2:'低調', 1:'静かに' };
+/* いちばん効いている要素そのものを文にする */
+function driverText(F, comp) {
+  var pos = (comp.deviation !== undefined ? comp.deviation : comp.score) > 0;
+  switch (comp.key) {
+    case 'nichiun':
+      return '今日は「' + F.tenGod + '」の巡り。' + DAY_TENGOD[F.tenGod][pos ? 0 : 1] +
+        (comp.detail && comp.detail.indexOf('干渉なし') < 0 ? '（' + comp.detail + '）' : '');
+    case 'stage':
+      return pos ? '日主の勢いが乗る巡り（' + F.stage + '）。動き出しと初対面に向く。'
+                 : '日主の勢いが落ちる巡り（' + F.stage + '）。予定を詰めず、休む時間を先に確保する。';
+    case 'kubou':
+      return '空亡日。成果を取りにいくより、片づけ・仕込み・振り返りに回すと後で効く。';
+    case 'kyusei':
+      return pos ? '日盤で本命星が' + F.honmeiDir + 'に出ている。' + KYUSEI_DAY[F.honmeiDir] + '。'
+                 : '日盤で本命星が' + F.honmeiDir + 'に回って動きが取りにくい。' + KYUSEI_DAY_NEG[F.honmeiDir] + '。';
+    case 'numer':
+      return pos ? '数の周期が開く側（パーソナルデー' + F.personalDay + '）。始める・見せる・広げるのに向く。'
+                 : '数の周期が閉じる側（パーソナルデー' + F.personalDay + '）。整理と手放しに使う日。';
+    case 'tsukiun':
+      return pos ? '今月（' + F.date.termName + 'の節）の流れ自体が後押ししている。月内で片づけたい件を進める。'
+                 : '今月（' + F.date.termName + 'の節）の流れが逆風。急がない案件は次の節に送る。';
+    case 'nenun':
+      return pos ? '今年の土台が効いている。年単位の計画に沿った動きなら通りやすい。'
+                 : '今年の土台が重い。守りに徹しても損はしない時期。';
+    case 'transit':
+      return pos ? '経過中の月・太陽が出生図を良い角度で刺激している。感情が動く分、伝えるには向く。'
+                 : '経過中の月・太陽が出生図と難しい角度。感情のもつれと言い過ぎに注意。';
+    case 'choku':
+      return '十二直は「' + F.choku + '」。' + F.chokuText + '。';
+    case 'rokuyou':
+      return '六曜は' + F.rokuyou + '。' + F.rokuyouText + '。';
+    case 'tarot':
+      return '引いた「' + F.card.name + (F.card.reversed ? '（逆位置）' : '') + '」が' +
+             (pos ? '背中を押している' : '引き止めている') + '。' + F.card.text;
+  }
+  return '';
+}
+function dayFortune(ctx, y, m, d, drawn, noDist) {
   var tz = ctx.birth.tz, D = dayContext(y, m, d, tz), P = ctx.pillars, st = ctx.strength, out = [];
 
   /* 日運 */
@@ -2019,8 +2111,10 @@ function dayFortune(ctx, y, m, d, drawn) {
   out.push({ key:'numer', label:'パーソナルデー ' + pd + '（' + PY_THEME[pd] + '）',
              score: PY_SCORE[pd] * 0.8, w: DAY_W.numer, detail:'' });
 
-  /* 月運・年運 */
-  var ms = monthScores(ctx, D.solarYear), mrow = ms.months[D.monthOrder];
+  /* 月運・年運 (分布の算出で何度も呼ぶのでメモ化する) */
+  ctx._ms = ctx._ms || {};
+  var ms = ctx._ms[D.solarYear] || (ctx._ms[D.solarYear] = monthScores(ctx, D.solarYear));
+  var mrow = ms.months[D.monthOrder];
   out.push({ key:'tsukiun', label:'月運 ' + mrow.pillar + '（' + D.termName + 'の節）',
              score: mrow.score * 0.7, w: DAY_W.tsukiun, detail:'' });
   out.push({ key:'nenun', label:'年運 ' + annualPillar(D.solarYear).name,
@@ -2072,20 +2166,43 @@ function dayFortune(ctx, y, m, d, drawn) {
   /* 方位 */
   var dirs = directionsFrom(ctx.kigaku, nd.star, D.branch, '日破');
 
-  /* いちばん効いている要素 */
-  var sorted = out.slice().sort(function (a, b) { return Math.abs(b.score * b.w) - Math.abs(a.score * a.w); });
-  return {
+  var F = {
     date: D, score: score, ganzhi: D.name, tenGod: tg, stage: stage, kubou: ku,
     choku: ch, chokuText: CHOKU_INFO[ch][1], rokuyou: rk, rokuyouText: ROKUYOU_INFO[rk][1],
-    lunar: D.lunar, nineStar: nd, moonSign: SIGNS[signOf(tMoon)],
-    card: card, pending: !card,
-    components: out, directions: dirs, driver: sorted[0],
-    verdict: score >= 50 ? '攻めていい日。動かすなら今日。'
-      : score >= 20 ? '追い風。予定を前に倒す価値がある。'
-      : score >= -10 ? '平常運転。淡々と進めるのが正解。'
-      : score >= -40 ? '守りの日。決めごとより、整理と下ごしらえ。'
-      : '無理をしない日。人と揉めやすいので、返事は一日置く。'
+    lunar: D.lunar, nineStar: nd, honmeiDir: dirOf, moonSign: SIGNS[signOf(tMoon)],
+    personalDay: pd, card: card, pending: !card,
+    components: out, directions: dirs
   };
+  if (noDist) return F;                       /* 分布を作っている最中は打ち切る */
+
+  var dist = dayDistribution(ctx, y), xs = dist.scores;
+  F.percentile = percentileOf(xs, score);
+  F.rank = Math.max(1, Math.round((1 - F.percentile) * xs.length));
+  F.level = F.percentile >= 0.90 ? 5 : F.percentile >= 0.68 ? 4
+          : F.percentile >= 0.32 ? 3 : F.percentile >= 0.10 ? 2 : 1;
+  F.levelName = LEVEL_NAME[F.level];
+  F.yearRange = { min: xs[0], max: xs[xs.length - 1], median: xs[Math.floor(xs.length / 2)], days: xs.length };
+
+  /* 「いちばん効いている要素」は、絶対値の大きさではなく
+     その要素の“この 1 年の平常値”からのズレで決める。
+     月運や年運のように毎日同じ値のものは、今日を他の日と区別しないため自然に落ちる。 */
+  out.forEach(function (c) { c.contribution = c.score * c.w; c.deviation = c.contribution - (dist.mean[c.key] || 0); });
+  var byDev = out.slice().sort(function (a, b) { return Math.abs(b.deviation) - Math.abs(a.deviation); });
+  /* 調子と本文が食い違わないよう、良い日は押している要素、悪い日は引いている要素を主役にする */
+  var want = F.level >= 4 ? 1 : F.level <= 2 ? -1 : 0;
+  var main = null;
+  if (want) for (var i2 = 0; i2 < byDev.length; i2++)
+    if (byDev[i2].deviation * want > 0) { main = byDev[i2]; break; }
+  if (!main) main = byDev[0];
+  var counter = null;
+  for (var j2 = 0; j2 < byDev.length; j2++)
+    if (byDev[j2] !== main && byDev[j2].deviation * main.deviation < 0 &&
+        Math.abs(byDev[j2].deviation) >= Math.abs(main.deviation) * 0.4) { counter = byDev[j2]; break; }
+  F.driver = main; F.second = counter;        /* 対抗は文に出したときだけ立てる */
+  F.message = (TONE[F.level] + driverText(F, main) +
+               (counter ? 'ただし、' + driverText(F, counter) : '')).trim();
+  F.verdict = F.message;
+  return F;
 }
 
 /* ==========================================================================*/
@@ -2093,7 +2210,7 @@ return {
   /* 解析 */
   analyze: analyze, futureSim: futureSim, lifeTimeline: lifeTimeline, monthScores: monthScores,
   dayFortune: dayFortune, dayContext: dayContext, nineStarDay: nineStarDay, DAY_W: DAY_W,
-  randomCard: randomCard, cardByIndex: cardByIndex, hash: function (t) { return hash32(t)().toString(36); },
+  randomCard: randomCard, cardByIndex: cardByIndex, dayDistribution: dayDistribution, hash: function (t) { return hash32(t)().toString(36); },
   yearScore: yearScore, yearComponents: yearComponents, compatibility: compatibility, pairYears: pairYears,
   drawSpread: drawSpread, directions: directions,
   /* 個別エンジン (単体でも使える) */
@@ -2638,6 +2755,16 @@ function personKey(A) {
 }
 function ymd(dt) { return dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' + pad(dt.getDate()); }
 
+function levelBar(F) {
+  var pos = (F.percentile * 100).toFixed(1);
+  var seg = [[10,'var(--bad)'],[22,'#c9a227'],[36,'var(--muted)'],[22,'#7aa87a'],[10,'var(--good)']];
+  var g = '', x = 0;
+  seg.forEach(function (t) { g += '<i style="position:absolute;left:' + x + '%;width:' + t[0] + '%;background:' + t[1] + ';opacity:.35"></i>'; x += t[0]; });
+  return '<div class="bar" style="position:relative;height:12px;margin-top:8px">' + g +
+    '<i style="position:absolute;left:calc(' + pos + '% - 1px);width:3px;background:var(--fg)"></i></div>' +
+    '<div class="small muted" style="display:flex;justify-content:space-between;margin-top:2px">' +
+    '<span>静かに</span><span>低調</span><span>平常</span><span>good</span><span>絶好調</span></div>';
+}
 function renderToday(A) {
   var c = el('div'), cur = new Date(), pk = personKey(A), storageOK = lsOK();
   function draw() {
@@ -2654,11 +2781,15 @@ function renderToday(A) {
       '<div style="max-width:180px"><input id="dt" type="date" value="' + ymd(cur) + '"></div>' +
       '<button class="mini" id="next">翌日 ▶</button>' +
       '<button class="mini" id="today">今日</button></div>' +
-      '<h3>' + y + ' 年 ' + m + ' 月 ' + d + ' 日（' + wd + '）　' +
-        esc(F.ganzhi) + 'の日　総合 ' + F.score.toFixed(0) +
-        (F.pending ? ' <span class="tag bad">タロット未反映</span>' : '') + '</h3>' + gauge(F.score) +
-      '<p class="lead" style="margin-top:10px">' + esc(F.verdict) + '</p>' +
-      '<p class="small muted">いちばん効いているのは「' + esc(F.driver.label) + '」。' +
+      '<h3>' + y + ' 年 ' + m + ' 月 ' + d + ' 日（' + wd + '）　' + esc(F.ganzhi) + 'の日' +
+        '　<span class="tag ' + (F.level >= 4 ? 'good' : F.level <= 2 ? 'bad' : '') + '">' + esc(F.levelName) + '</span>' +
+        (F.pending ? '<span class="tag bad">タロット未反映</span>' : '') + '</h3>' +
+      '<p class="lead" style="margin-top:4px">' + esc(F.message) + '</p>' +
+      levelBar(F) +
+      '<p class="small muted">スコア ' + F.score.toFixed(0) + '。' + y + ' 年 ' + F.yearRange.days + ' 日のなかで <b>' +
+        F.rank + ' 番目</b>（この年の幅は ' + F.yearRange.min.toFixed(0) + '〜' + F.yearRange.max.toFixed(0) +
+        '、中央値 ' + F.yearRange.median.toFixed(0) + '）。' +
+        '判定はこの分布のなかでの位置で決めています。' +
       (F.pending ? 'まだ札を引いていないので、この数字はタロット抜きの暫定値です。' : '') + '</p></div>';
 
     /* --- タロット --- */
@@ -2700,14 +2831,24 @@ function renderToday(A) {
       '</table></div></div>';
 
     /* --- 内訳 --- */
-    s += '<div class="card"><h2>内訳</h2><div class="scroll"><table><tr><th>要素</th><th>スコア</th><th>重み</th><th>補足</th></tr>';
+    s += '<div class="card"><h2>内訳</h2>' +
+      '<p class="small muted">「平常比」は、その要素のこの 1 年の平均からのズレ。' +
+      'メッセージの主役は、絶対値の大きさではなくこのズレの大きさで選んでいます' +
+      '（月運や年運のように毎日同じ値のものは、今日を他の日と区別しないため主役になりません）。</p>' +
+      '<div class="scroll"><table><tr><th>要素</th><th>スコア</th><th>重み</th><th>平常比</th><th>補足</th></tr>';
     F.components.forEach(function (x) {
-      s += '<tr><td>' + esc(x.label) + '</td><td class="num ' + (x.score > 0 ? 'pos' : x.score < 0 ? 'neg' : '') + '">' +
+      var isMain = x === F.driver, isSub = x === F.second;
+      s += '<tr' + (isMain ? ' style="background:var(--soft)"' : '') + '><td>' +
+        (isMain ? '<span class="tag">主役</span>' : isSub ? '<span class="tag">対抗</span>' : '') + esc(x.label) + '</td>' +
+        '<td class="num ' + (x.score > 0 ? 'pos' : x.score < 0 ? 'neg' : '') + '">' +
         (x.score > 0 ? '+' : '') + x.score.toFixed(0) + '</td><td class="num muted">×' + x.w.toFixed(2) + '</td>' +
+        '<td class="num ' + (x.deviation > 0 ? 'pos' : x.deviation < 0 ? 'neg' : '') + '">' +
+        (x.deviation > 0 ? '+' : '') + x.deviation.toFixed(1) + '</td>' +
         '<td class="small muted">' + esc(x.detail || '') + '</td></tr>';
     });
     if (F.pending) s += '<tr><td class="muted">今日の 1 枚</td><td class="num muted">—</td>' +
-      '<td class="num muted">×' + MDS.DAY_W.tarot.toFixed(2) + '</td><td class="small muted">未着。引くとここに加わり、総合が動きます</td></tr>';
+      '<td class="num muted">×' + MDS.DAY_W.tarot.toFixed(2) + '</td><td class="num muted">—</td>' +
+      '<td class="small muted">未着。引くとここに加わり、総合が動きます</td></tr>';
     s += '</table></div></div>';
 
     /* --- 方位 --- */
