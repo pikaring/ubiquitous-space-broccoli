@@ -148,6 +148,7 @@
     </div>
   </details>
   <button class="go" id="run">解析する</button>
+  <div id="profnote" class="note"></div>
 </div>
 
 <div id="out"></div>
@@ -2918,7 +2919,73 @@ function show(A) {
   out.appendChild(nav); out.appendChild(body);
   body.appendChild(TABS[0][1](A));
 }
-function run() {
+/* --- 出生情報の保存 -------------------------------------------------------
+   「解析する」を押した時点の入力をこの端末に保存し、次に開いたら読み戻す。
+   保存先は localStorage だけで、どこにも送信しない。 */
+var PROFILE_KEY = 'mds:profile:v1';
+var FORM_FIELDS = [
+  ['y', 'num', 1800, 2100], ['mo', 'num', 1, 12], ['d', 'num', 1, 31],
+  ['hh', 'num', 0, 23], ['mi', 'num', 0, 59],
+  ['lat', 'num', -90, 90], ['lon', 'num', -180, 180], ['tz', 'num', -12, 14],
+  ['sex', 'sel'], ['blood', 'sel'], ['house', 'sel'], ['name', 'str'],
+  ['nohour', 'bool'], ['tst', 'bool'], ['late', 'bool']
+];
+function readForm() {
+  var o = {};
+  FORM_FIELDS.forEach(function (f) {
+    var e = $(f[0]);
+    o[f[0]] = f[1] === 'bool' ? e.checked : (f[1] === 'num' ? +e.value : e.value);
+  });
+  var ps = $('place'), opt = ps.options[ps.selectedIndex];
+  o.place = opt ? opt.textContent : '';
+  o.saved = Date.now();
+  return o;
+}
+/* 保存値は書き換えられうるので、型と範囲を検査してから入れる */
+function applyForm(o) {
+  if (!o || typeof o !== 'object') return false;
+  if (typeof o.place === 'string') {
+    var ps = $('place');
+    for (var i = 0; i < ps.options.length; i++)
+      if (ps.options[i].textContent === o.place && !ps.options[i].disabled) { ps.value = ps.options[i].value; break; }
+  }
+  FORM_FIELDS.forEach(function (f) {
+    var v = o[f[0]], e = $(f[0]);
+    if (v === undefined || v === null) return;
+    if (f[1] === 'bool') { e.checked = !!v; return; }
+    if (f[1] === 'num') { v = +v; if (!isFinite(v) || v < f[2] || v > f[3]) return; e.value = v; return; }
+    if (typeof v !== 'string' || v.length > 80) return;
+    if (e.tagName === 'SELECT') {
+      for (var j = 0; j < e.options.length; j++) if (e.options[j].value === v) { e.value = v; return; }
+      return;
+    }
+    e.value = v;
+  });
+  $('hh').disabled = $('mi').disabled = $('nohour').checked;
+  return true;
+}
+function loadProfile() {
+  var raw = lsGet(PROFILE_KEY); if (!raw) return null;
+  var o = null; try { o = JSON.parse(raw); } catch (e) { return null; }
+  return applyForm(o) ? o : null;
+}
+function profNote(o, justSaved) {
+  var box = $('profnote');
+  if (!o) { box.innerHTML = ''; return; }
+  var when = new Date(o.saved), t = when.getFullYear() + '/' + (when.getMonth() + 1) + '/' + when.getDate();
+  box.innerHTML = (justSaved ? 'この端末に出生情報を保存しました。' : t + ' に保存した出生情報を読み込みました。') +
+    '次に開いたときは自動で入ります。どこにも送信していません。 ' +
+    '<button class="mini" id="forget" style="margin-left:6px">保存を消す</button>';
+  $('forget').onclick = function () {
+    try { localStorage.removeItem(PROFILE_KEY); } catch (e) {}
+    delete memStore[PROFILE_KEY];
+    box.innerHTML = '<span class="muted">保存した出生情報を消しました。</span>';
+  };
+}
+
+/* save は「解析する」を押したときだけ true。
+   起動直後の自動解析で、頼まれていない保存を作らないため。 */
+function run(save) {
   var noh = $('nohour').checked;
   var A = MDS.analyze({
     y: +$('y').value, m: +$('mo').value, d: +$('d').value,
@@ -2928,6 +2995,11 @@ function run() {
     trueSolarTime: $('tst').checked, lateNightNextDay: $('late').checked,
     houseSystem: $('house').value
   });
+  if (save) {
+    var prof = readForm();
+    lsSet(PROFILE_KEY, JSON.stringify(prof));
+    profNote(prof, true);
+  }
   show(A);
 }
 var sel = $('place');
@@ -2937,8 +3009,10 @@ sel.onchange = function () {
   $('lat').value = p[1]; $('lon').value = p[2]; $('tz').value = p[3];
 };
 $('nohour').onchange = function () { $('hh').disabled = $('mi').disabled = this.checked; };
-$('run').onclick = run;
-run();
+$('run').onclick = function () { run(true); };
+var restored = loadProfile();
+if (restored) profNote(restored, false);
+run(false);
 })();
 </script>
 </body>
