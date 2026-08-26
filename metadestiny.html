@@ -1164,20 +1164,21 @@ function kigaku(p, sex) {
            keisha: keisha, keishaName: KYUSEI[keisha], elem: KYUSEI_ELEM[honmei] };
 }
 /* ある年の吉方位・凶方位 */
-function directions(k, year, monthOrder) {
-  var yearStar = starOfYear(year), yb = board(yearStar);
-  var res = { center: yearStar, board: yb, good: [], bad: [] };
-  var goStar = DIR_HOME.map(function (_, i) { return yb[DIRS[i]]; });
+/* 盤の中宮星と「破」を決める支を与えると、その盤の吉方・凶方を返す。
+   年盤なら破は年支（歳破）、日盤なら日支（日破）。 */
+function directionsFrom(k, center, breakBranch, breakLabel) {
+  var yb = board(center);
+  var res = { center: center, board: yb, good: [], bad: [] };
   var gohsatsu = starDir(yb, 5), anken = gohsatsu === '中央' ? null : DIRS[(DIRS.indexOf(gohsatsu) + 4) % 8];
   var honmeisatsu = starDir(yb, k.honmei), teki = honmeisatsu === '中央' ? null : DIRS[(DIRS.indexOf(honmeisatsu) + 4) % 8];
-  var yb2 = BRANCH_DIR[mod(year - 4, 12)], saiha = DIRS[(DIRS.indexOf(yb2) + 4) % 8];
+  var ha = DIRS[(DIRS.indexOf(BRANCH_DIR[breakBranch]) + 4) % 8];
   var badMap = {};
   function addBad(d, why) { if (!d) return; badMap[d] = badMap[d] || []; badMap[d].push(why); }
   addBad(gohsatsu === '中央' ? null : gohsatsu, '五黄殺');
   addBad(anken, '暗剣殺');
   addBad(honmeisatsu === '中央' ? null : honmeisatsu, '本命殺');
   addBad(teki, '本命的殺');
-  addBad(saiha, '歳破');
+  addBad(ha, breakLabel);
   for (var i = 0; i < 8; i++) {
     var d = DIRS[i], st = yb[d];
     if (badMap[d]) { res.bad.push({ dir: d, star: KYUSEI[st], why: badMap[d].join('・') }); continue; }
@@ -1192,6 +1193,7 @@ function directions(k, year, monthOrder) {
   }
   return res;
 }
+function directions(k, year) { return directionsFrom(k, starOfYear(year), mod(year - 4, 12), '歳破'); }
 /* 九星の 9 年サイクル (中宮=変化、坎=種まき… 収穫は離) */
 var KYUSEI_PHASE = { '中央':['変革期','立場が変わり、動きが大きくなる年'], '北':['種まき','水面下で準備する年'],
  '北東':['変化','住まいや所属が動きやすい年'], '東':['始動','新しいことが音を立てて動く年'],
@@ -1861,10 +1863,218 @@ function futureSim(ctx, year) {
   };
 }
 
+
+/* ============================================================================
+ * §14 今日の運勢
+ *
+ * 年運・月運の下にもう一段、日単位の層を重ねる。
+ *   日干支の十神と用神／十二運／空亡日／九星の日盤／パーソナルデー／
+ *   十二直／六曜／トランジットの月と太陽／タロット 1 枚
+ * タロットは「引いて終わり」にせず、札ごとの極性を数値として合成に混ぜる。
+ * ==========================================================================*/
+
+/* --- タロット 1 枚を数値にする --------------------------------------------
+   大アルカナは札ごとの極性表。小アルカナは数位の基準値に、
+   古典的に難しいとされる札だけスートごとの上書きをかける。
+   逆位置は符号を反転させたうえで 0.6 倍する（「逆」＝正反対ではなく、
+   滞り・内向き・遅れとして読む慣例に合わせるため）。                        */
+var MAJOR_POLARITY = [
+  0.5, 1.5, 0.5, 1.5, 1.0, 0.5, 1.5, 1.5, 1.5, 0.0, 1.5, 0.5,
+  -1.0, -1.0, 1.0, -1.5, -2.0, 2.0, -1.0, 2.0, 1.0, 2.0
+];
+var RANK_POLARITY = [1.5, 0.5, 0.5, -0.3, -1.0, 1.0, -0.3, 0.3, 0.5, 0.5, 0.5, 0.7, 1.0, 1.0];
+var SUIT_OVERRIDE = {
+  'ソード':   { 3:-1.5, 5:-1.0, 7:-1.0, 8:-1.5, 9:-2.0, 10:-2.0 },
+  'カップ':   { 5:-1.5, 8:-0.5 },
+  'ペンタクル': { 5:-1.5 },
+  'ワンド':   { 5:-0.5, 10:-1.0 }
+};
+function cardPolarity(card, reversed) {
+  var v = card.major ? MAJOR_POLARITY[card.num] : RANK_POLARITY[card.num - 1];
+  if (!card.major) { var o = SUIT_OVERRIDE[card.suit]; if (o && o[card.num] !== undefined) v = o[card.num]; }
+  return reversed ? -v * 0.6 : v;
+}
+function cardReading(card, reversed) {
+  if (card.major) return MAJOR_TEXT[card.num] + (reversed ? '（逆位置：その力が内に向くか、まだ動き出していない）' : '');
+  var suitText = { 'ワンド':'意欲・行動・仕事の火', 'カップ':'感情・関係・受け取る水',
+                   'ソード':'思考・言葉・切り分ける風', 'ペンタクル':'現実・お金・体の地' }[card.suit];
+  var rankText = card.num <= 10 ? '第 ' + card.num + ' 段階' : '人物として現れる場面';
+  return suitText + '。' + rankText + (reversed ? '。逆位置なので、進みが鈍いか内側にこもっている' : '');
+}
+
+/* --- 九星の日盤 (陽遁・陰遁) ----------------------------------------------
+   冬至にもっとも近い甲子日から陽遁（一白中宮・日ごとに順行）、
+   夏至にもっとも近い甲子日から陰遁（九紫中宮・日ごとに逆行）。
+   閏（置閏法）の扱いは流派差が大きいため、ここでは入れていない。          */
+function nearestKoushi(termJD) {
+  var j = Math.floor(termJD + 0.5), best = null;
+  for (var k = -30; k <= 30; k++)
+    if (dayIndexFromJDN(j + k) === 0 && (best === null || Math.abs(k) < Math.abs(best))) best = k;
+  return j + best;
+}
+function nineStarDay(jdn) {
+  var y = fromJD(jdn).y, sw = [];
+  for (var i = -1; i <= 1; i++) {
+    sw.push({ jdn: nearestKoushi(solarTermJD(y + i, 270)), yang: true });   // 冬至 → 陽遁
+    sw.push({ jdn: nearestKoushi(solarTermJD(y + i, 90)), yang: false });   // 夏至 → 陰遁
+  }
+  sw.sort(function (a, b) { return a.jdn - b.jdn; });
+  var cur = sw[0];
+  for (var j = 0; j < sw.length; j++) if (sw[j].jdn <= jdn) cur = sw[j];
+  var n = mod(jdn - cur.jdn, 9);
+  return { star: cur.yang ? n + 1 : 9 - n, yang: cur.yang, since: cur.jdn };
+}
+
+/* --- 暦注 ----------------------------------------------------------------*/
+var CHOKU = ['建','除','満','平','定','執','破','危','成','納','開','閉'];
+var CHOKU_INFO = {
+  '建':[ 8,'万事に良い日。始めごとに向く（土を動かすことだけ避ける）'],
+  '除':[ 5,'邪気を払う日。掃除・治療・整理に向く'],
+  '満':[ 8,'満ち足りる日。新規事・移転に向く'],
+  '平':[ 4,'平らかな日。均す・和解する・約束するのに向く'],
+  '定':[ 6,'定まる日。開店・契約・種まきに向く（旅行は不向き）'],
+  '執':[ 3,'執り行う日。祭事・作りごとに向く（金銭の出入りは控える）'],
+  '破':[-12,'破れる日。物事が壊れやすい。談判や決着だけは向く'],
+  '危':[ -8,'危うい日。高所・旅行・冒険は避け、控えめに'],
+  '成':[  8,'成る日。新しく始めたことが形になる'],
+  '納':[  2,'納める日。取り入れ・収納・支払いに向く'],
+  '開':[  8,'開く日。開業・移転・婚礼に向く'],
+  '閉':[ -6,'閉じる日。締める・納める以外は控える']
+};
+var KYUSEI_DAY = { '中央':'動きが大きく、目立つ日', '北':'表に出ないほうが進む日', '北東':'切り替え・片づけの日',
+  '東':'動き出しに向く日', '南東':'人との縁が広がる日', '南':'人目に触れ、評価される日',
+  '南西':'地道な作業がはかどる日', '西':'楽しみごと・受け取りの日', '北西':'決断と責任の日' };
+var ROKUYOU = ['大安','赤口','先勝','友引','先負','仏滅'];
+var ROKUYOU_INFO = {
+  '大安':[10,'終日よい'], '赤口':[-6,'正午前後のみよい'], '先勝':[3,'午前がよい'],
+  '友引':[4,'朝夕がよい（正午は避ける）'], '先負':[-1,'午後がよい'], '仏滅':[-8,'控えめに']
+};
+function rokuyou(lunar) { return ROKUYOU[mod(lunar.month + lunar.day, 6)]; }
+
+/* --- その日の暦データ -----------------------------------------------------*/
+function dayContext(y, m, d, tz) {
+  var jdNoon = localToJD(y, m, d, 12, 0, tz);
+  var jdn = Math.floor(jdNoon + tz / 24 + 0.5);
+  var sex = dayIndexFromJDN(jdn);
+  var risshun = solarTermJD(y, 315);
+  var solarYear = jdNoon < risshun ? y - 1 : y;
+  var terms = majorTerms(solarYear), mi = 0;
+  for (var i = 0; i < 12; i++) if (jdNoon >= terms[i].jd) mi = i;
+  return { jdNoon: jdNoon, jdn: jdn, y: y, m: m, d: d,
+    stem: sex % 10, branch: sex % 12, name: STEM[sex % 10] + BRANCH[sex % 12],
+    solarYear: solarYear, monthOrder: mi, monthBranch: mod(2 + mi, 12),
+    monthStem: mod((mod(solarYear - 4, 10) % 5) * 2 + 2 + mi, 10),
+    termName: terms[mi].name, lunar: lunarCalendar(jdNoon, 8) };
+}
+/* --- 合成 ----------------------------------------------------------------*/
+var DAY_W = { nichiun:1.2, stage:0.7, kubou:0.8, kyusei:0.8, numer:0.5,
+              tsukiun:0.7, nenun:0.6, transit:0.7, choku:0.4, rokuyou:0.25, tarot:0.9 };
+function dayFortune(ctx, y, m, d) {
+  var tz = ctx.birth.tz, D = dayContext(y, m, d, tz), P = ctx.pillars, st = ctx.strength, out = [];
+
+  /* 日運 */
+  var tg = TENGOD[tenGod(P.day.stem, D.stem)];
+  var s1 = (elemFavorScore(STEM_ELEM[D.stem], st) * 0.5 + elemFavorScore(BRANCH_ELEM[D.branch], st) * 0.5) * 32;
+  var rels = branchRelations(D.branch, P.day.branch).concat(branchRelations(D.branch, P.month.branch));
+  var relText = [];
+  rels.forEach(function (r) { s1 += r.score * 3.5; relText.push(r.label); });
+  out.push({ key:'nichiun', label:'日運 ' + D.name + '（' + tg + '）', score: s1, w: DAY_W.nichiun,
+             detail: relText.join('・') || '命式との強い干渉なし' });
+
+  /* 十二運 */
+  var stage = TWELVE[twelveStage(P.day.stem, D.branch)];
+  var sv = { '長生':14, '沐浴':-4, '冠帯':12, '建禄':16, '帝旺':18, '衰':-4,
+             '病':-10, '死':-12, '墓':-8, '絶':-14, '胎':4, '養':8 }[stage];
+  out.push({ key:'stage', label:'十二運 ' + stage, score: sv, w: DAY_W.stage,
+             detail: '日主 ' + STEM[P.day.stem] + ' から見た ' + BRANCH[D.branch] + ' の勢い' });
+
+  /* 空亡日 */
+  var ku = P.kubou.indexOf(D.branch) >= 0;
+  out.push({ key:'kubou', label: ku ? '空亡日（' + ctx.sanmei.tenchusatsu.day + '）' : '空亡日ではない',
+             score: ku ? -22 : 3, w: DAY_W.kubou,
+             detail: ku ? '決めごとより、片づけ・下ごしらえに使うと空回りしない' : '' });
+
+  /* 九星の日盤 */
+  var nd = nineStarDay(D.jdn), nb = board(nd.star), dirOf = starDir(nb, ctx.kigaku.honmei);
+  out.push({ key:'kyusei', label:'日盤 ' + KYUSEI[nd.star] + '中宮（' + (nd.yang ? '陽遁' : '陰遁') + '）→ 本命星は' + dirOf,
+             score: KYUSEI_SCORE[dirOf] * 0.65, w: DAY_W.kyusei, detail: KYUSEI_DAY[dirOf] });
+
+  /* パーソナルデー */
+  var pd = reduceNum(reduceNum(ctx.numerology.personalMonth(y, m)) + reduceNum(d));
+  out.push({ key:'numer', label:'パーソナルデー ' + pd + '（' + PY_THEME[pd] + '）',
+             score: PY_SCORE[pd] * 0.8, w: DAY_W.numer, detail:'' });
+
+  /* 月運・年運 */
+  var ms = monthScores(ctx, D.solarYear), mrow = ms.months[D.monthOrder];
+  out.push({ key:'tsukiun', label:'月運 ' + mrow.pillar + '（' + D.termName + 'の節）',
+             score: mrow.score * 0.7, w: DAY_W.tsukiun, detail:'' });
+  out.push({ key:'nenun', label:'年運 ' + annualPillar(D.solarYear).name,
+             score: ms.base.score * 0.6, w: DAY_W.nenun, detail:'' });
+
+  /* トランジット */
+  var jde = jdUT2TT(D.jdNoon), tMoon = moonLongitude(jde), tSun = sunLongitude(jde);
+  var natal = ctx.western.bodies, ts = 0, tt = [];
+  var targets = [{ n:'太陽', l: natal[0].lon }, { n:'月', l: natal[1].lon }];
+  if (ctx.birth.hasHour) targets.push({ n:'ASC', l: ctx.western.houses.asc });
+  [{ n:'月', l:tMoon, k:1.0 }, { n:'太陽', l:tSun, k:0.7 }].forEach(function (t) {
+    targets.forEach(function (g) {
+      var diff = Math.abs(mod(t.l - g.l + 180, 360) - 180);
+      for (var a = 0; a < ASPECTS.length; a++) {
+        var A = ASPECTS[a], orb = Math.abs(diff - A.deg);
+        if (orb <= Math.min(A.orb, 6)) {
+          var v = (A.name === '合' ? 8 : A.score * 11) * t.k * (1 - orb / Math.min(A.orb, 6));
+          ts += v; tt.push('経過の' + t.n + ' ' + A.name + ' 出生の' + g.n);
+          break;
+        }
+      }
+    });
+  });
+  out.push({ key:'transit', label:'トランジット（月は' + SIGNS[signOf(tMoon)] + '）',
+             score: Math.max(-30, Math.min(30, ts)), w: DAY_W.transit,
+             detail: tt.join('・') || '出生図への近いアスペクトなし' });
+
+  /* 十二直・六曜 */
+  var ch = CHOKU[mod(D.branch - D.monthBranch, 12)];
+  out.push({ key:'choku', label:'十二直 ' + ch, score: CHOKU_INFO[ch][0], w: DAY_W.choku, detail: CHOKU_INFO[ch][1] });
+  var rk = rokuyou(D.lunar);
+  out.push({ key:'rokuyou', label:'六曜 ' + rk, score: ROKUYOU_INFO[rk][0], w: DAY_W.rokuyou,
+             detail: ROKUYOU_INFO[rk][1] + '（六曜は暦の月日から機械的に決まる約束事なので、重みは小さくしています）' });
+
+  /* タロット 1 枚 */
+  var pick = drawSpread(ctx.tarot.seed + '@' + y + '-' + m + '-' + d, 1)[0];
+  var pol = cardPolarity(pick.card, pick.reversed);
+  out.push({ key:'tarot', label:'今日の 1 枚 ' + pick.card.name + (pick.reversed ? '（逆位置）' : ''),
+             score: pol * 20, w: DAY_W.tarot, detail: cardReading(pick.card, pick.reversed) });
+
+  var sum = 0, wsum = 0;
+  out.forEach(function (x) { sum += x.score * x.w; wsum += x.w; });
+  var score = Math.max(-100, Math.min(100, sum / wsum * 1.9));
+
+  /* 方位 */
+  var dirs = directionsFrom(ctx.kigaku, nd.star, D.branch, '日破');
+
+  /* いちばん効いている要素 */
+  var sorted = out.slice().sort(function (a, b) { return Math.abs(b.score * b.w) - Math.abs(a.score * a.w); });
+  return {
+    date: D, score: score, ganzhi: D.name, tenGod: tg, stage: stage, kubou: ku,
+    choku: ch, chokuText: CHOKU_INFO[ch][1], rokuyou: rk, rokuyouText: ROKUYOU_INFO[rk][1],
+    lunar: D.lunar, nineStar: nd, moonSign: SIGNS[signOf(tMoon)],
+    card: { name: pick.card.name, reversed: pick.reversed, polarity: pol,
+            text: cardReading(pick.card, pick.reversed), major: pick.card.major },
+    components: out, directions: dirs, driver: sorted[0],
+    verdict: score >= 50 ? '攻めていい日。動かすなら今日。'
+      : score >= 20 ? '追い風。予定を前に倒す価値がある。'
+      : score >= -10 ? '平常運転。淡々と進めるのが正解。'
+      : score >= -40 ? '守りの日。決めごとより、整理と下ごしらえ。'
+      : '無理をしない日。人と揉めやすいので、返事は一日置く。'
+  };
+}
+
 /* ==========================================================================*/
 return {
   /* 解析 */
   analyze: analyze, futureSim: futureSim, lifeTimeline: lifeTimeline, monthScores: monthScores,
+  dayFortune: dayFortune, dayContext: dayContext, nineStarDay: nineStarDay, DAY_W: DAY_W,
   yearScore: yearScore, yearComponents: yearComponents, compatibility: compatibility, pairYears: pairYears,
   drawSpread: drawSpread, directions: directions,
   /* 個別エンジン (単体でも使える) */
@@ -2395,9 +2605,82 @@ function cell(o, main) {
     '<span class="l">' + esc(o.pos) + '</span></div>';
 }
 
+/* --- セクション: 今日の運勢 -----------------------------------------------*/
+function renderToday(A) {
+  var c = el('div'), cur = new Date();
+  function draw() {
+    var y = cur.getFullYear(), m = cur.getMonth() + 1, d = cur.getDate();
+    var F = MDS.dayFortune(A, y, m, d);
+    var wd = '日月火水木金土'[cur.getDay()];
+    var s = '<div class="card"><h2>今日の運勢</h2>' +
+      '<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:12px">' +
+      '<button class="mini" id="prev">◀ 前日</button>' +
+      '<div style="max-width:180px"><input id="dt" type="date" value="' +
+        y + '-' + pad(m) + '-' + pad(d) + '"></div>' +
+      '<button class="mini" id="next">翌日 ▶</button>' +
+      '<button class="mini" id="today">今日</button></div>' +
+      '<h3>' + y + ' 年 ' + m + ' 月 ' + d + ' 日（' + wd + '）　' +
+        esc(F.ganzhi) + 'の日　総合 ' + F.score.toFixed(0) + '</h3>' + gauge(F.score) +
+      '<p class="lead" style="margin-top:10px">' + esc(F.verdict) + '</p>' +
+      '<p class="small muted">いちばん効いているのは「' + esc(F.driver.label) + '」。</p></div>';
+
+    /* タロット */
+    var pol = F.card.polarity;
+    s += '<div class="card"><h2>今日の 1 枚</h2>' +
+      '<p class="lead"><b>' + esc(F.card.name) + (F.card.reversed ? '（逆位置）' : '') + '</b>' +
+      '<span class="tag ' + (pol > 0.2 ? 'good' : pol < -0.2 ? 'bad' : '') + '">極性 ' +
+      (pol > 0 ? '+' : '') + pol.toFixed(1) + '</span></p>' +
+      '<p class="small">' + esc(F.card.text) + '</p>' +
+      '<p class="note">この 1 枚は飾りではなく、下の合成に <b>' + (pol * 20 > 0 ? '+' : '') +
+      (pol * 20).toFixed(0) + '（重み ' + MDS.DAY_W.tarot.toFixed(2) + '）</b>として実際に入っています。' +
+      '出生データと日付をシードにした決定論的シャッフルなので、同じ日は何度開いても同じ札です。' +
+      '逆位置は符号を反転したうえで 0.6 倍しています（正反対ではなく、滞りや遅れとして読む慣例に合わせるため）。</p></div>';
+
+    /* 暦注 */
+    s += '<div class="card"><h2>今日の暦</h2><div class="scroll"><table>' +
+      '<tr><th>日干支</th><td>' + esc(F.ganzhi) + '（日主から見て <b>' + esc(F.tenGod) + '</b>）</td></tr>' +
+      '<tr><th>十二運</th><td>' + esc(F.stage) + '</td></tr>' +
+      '<tr><th>空亡</th><td>' + (F.kubou ? '<span class="tag bad">空亡日</span>' : 'かからない') + '</td></tr>' +
+      '<tr><th>十二直</th><td><b>' + esc(F.choku) + '</b> — ' + esc(F.chokuText) + '</td></tr>' +
+      '<tr><th>六曜</th><td><b>' + esc(F.rokuyou) + '</b> — ' + esc(F.rokuyouText) + '</td></tr>' +
+      '<tr><th>旧暦</th><td>' + F.lunar.year + ' 年 ' + (F.lunar.leap ? '閏' : '') + F.lunar.month + ' 月 ' + F.lunar.day + ' 日</td></tr>' +
+      '<tr><th>九星の日盤</th><td>' + esc(MDS.KYUSEI[F.nineStar.star]) + '中宮（' + (F.nineStar.yang ? '陽遁' : '陰遁') + '）</td></tr>' +
+      '<tr><th>月の運行</th><td>トランジットの月は' + esc(F.moonSign) + '</td></tr>' +
+      '</table></div></div>';
+
+    /* 内訳 */
+    s += '<div class="card"><h2>内訳</h2><div class="scroll"><table><tr><th>要素</th><th>スコア</th><th>重み</th><th>補足</th></tr>';
+    F.components.forEach(function (x) {
+      s += '<tr><td>' + esc(x.label) + '</td><td class="num ' + (x.score > 0 ? 'pos' : x.score < 0 ? 'neg' : '') + '">' +
+        (x.score > 0 ? '+' : '') + x.score.toFixed(0) + '</td><td class="num muted">×' + x.w.toFixed(2) + '</td>' +
+        '<td class="small muted">' + esc(x.detail || '') + '</td></tr>';
+    });
+    s += '</table></div></div>';
+
+    /* 方位 */
+    s += '<div class="card"><h2>今日の方位（日盤）</h2>' +
+      '<p class="small"><b>吉方位：</b>' + esc(F.directions.good.map(function (g) { return g.dir + '（' + g.star + '／' + g.why + '）'; }).join('、') || 'この日は該当なし') + '</p>' +
+      '<p class="small"><b>凶方位：</b>' + esc(F.directions.bad.map(function (g) { return g.dir + '（' + g.why + '）'; }).join('、')) + '</p>' +
+      '<p class="note">日盤は「冬至にもっとも近い甲子日から陽遁、夏至にもっとも近い甲子日から陰遁」という一般則で算出しています。' +
+      '置閏法（閏の入れ方）は流派差が大きいため入れていません。</p></div>';
+
+    c.innerHTML = s;
+    var q = function (id) { return c.querySelector('#' + id); };
+    q('prev').onclick = function () { cur.setDate(cur.getDate() - 1); draw(); };
+    q('next').onclick = function () { cur.setDate(cur.getDate() + 1); draw(); };
+    q('today').onclick = function () { cur = new Date(); draw(); };
+    q('dt').onchange = function () {
+      var v = this.value.split('-');
+      if (v.length === 3) { cur = new Date(+v[0], +v[1] - 1, +v[2]); draw(); }
+    };
+  }
+  draw();
+  return c;
+}
+
 /* --- タブと起動 -----------------------------------------------------------*/
 var TABS = [
-  ['魂の設計図', renderBlueprint], ['人生テーマ', renderThemes], ['運命サイクル', renderCycles],
+  ['今日の運勢', renderToday], ['魂の設計図', renderBlueprint], ['人生テーマ', renderThemes], ['運命サイクル', renderCycles],
   ['人生年表', renderChrono], ['未来シミュレーター', null], ['人間関係', renderRelation], ['命式データ', renderRaw]
 ];
 function show(A) {
