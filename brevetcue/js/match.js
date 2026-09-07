@@ -136,8 +136,32 @@
           if (!rec.closeRaw && hit.times.close) rec.closeRaw = hit.times.close;
         }
       }
+      // 地点名の先頭にCP表記が付いている場合（「PC1 ローソン…」）はラベルと名前を分ける
+      if (rec.kind && rec.name) {
+        var nameHit = X.findCpCell([rec.name]);
+        if (nameHit && nameHit.name) {
+          rec.cpMarker = rec.cpMarker || nameHit.marker;
+          rec.name = nameHit.name;
+        }
+      }
       // Open/Closeが両方入っている行は、種別が読めなくてもCPとして扱う
       if (!rec.kind && rec.openRaw && rec.closeRaw) rec.kind = 'pc';
+      // CPなのに時刻が取れていない場合、行のどこかにある「7:16～9:09」を探す
+      if (rec.kind && (!rec.openRaw || !rec.closeRaw)) {
+        var rt = X.findTimesInRow(row, map.name);
+        if (!rec.openRaw && rt.open) rec.openRaw = rt.open;
+        if (!rec.closeRaw && rt.close) rec.closeRaw = rt.close;
+        // 片方しか無い時刻は、後でACP基準と比べてopen/closeを決める
+        if (!rec.openRaw && !rec.closeRaw && rt.single) rec.singleTime = rt.single;
+      }
+      // 「レシート」ならPC、「フォトチェック」なら通過チェックとして種別を補正する。
+      // 時刻が両方書かれている地点は有人チェックでもPC扱い（写真の記述だけでは通過チェックにしない）
+      if (rec.kind === 'pc' || rec.kind === 'pass') {
+        var rowText = row.map(function (v) { return typeof v === 'string' ? v : ''; }).join(' ');
+        if (/レシート/.test(rowText)) rec.kind = 'pc';
+        else if (/フォトチェック|フォトコントロール|通過チェック/.test(rowText)) rec.kind = 'pass';
+        else if (/写真|撮影/.test(rowText) && !(rec.openRaw && rec.closeRaw)) rec.kind = 'pass';
+      }
       out.push(rec);
     }
     // 区間距離しか無いシートは積算を復元する
@@ -274,14 +298,18 @@
       if (i === 0 && r.dist <= 0.2) kind = 'start';
       return {
         kind: kind,
-        label: X.extractLabel(kind, (r.cpMarker || '') + ' ' + (r.kindText || '') + ' ' + r.name, counters),
+        // シートに書かれた表記（PC1／Control2 など）をそのままラベルにする
+        label: (kind === 'pc' || kind === 'pass' || kind === 'quiz') && r.cpMarker
+          ? U.normalizeText(r.cpMarker).replace(/\s+/g, '')
+          : X.extractLabel(kind, (r.cpMarker || '') + ' ' + (r.kindText || '') + ' ' + r.name, counters),
         name: r.name,
         distKm: r.dist,
         note: r.note,
         road: r.road,
         landmark: r.landmark,
         openRaw: r.openRaw,
-        closeRaw: r.closeRaw
+        closeRaw: r.closeRaw,
+        singleTime: r.singleTime
       };
     });
     // Goalが種別判定されていない場合、最終地点をGoalに
@@ -307,6 +335,20 @@
         }
       });
     }
+
+    // 片方しか書かれていない時刻を、ACP基準との近さでOpen/Closeに振り分ける
+    cps.forEach(function (c) {
+      if (!c.singleTime || c.openRaw || c.closeRaw) return;
+      var t = c.singleTime.minutes;
+      var refOpen = acpOpenMin(c.distKm) + (startDate.getHours() * 60 + startDate.getMinutes());
+      var refClose = acpCloseMin(c.distKm) + (startDate.getHours() * 60 + startDate.getMinutes());
+      var norm = function (m) { return ((m % 1440) + 1440) % 1440; };
+      var dOpen = Math.abs(norm(t) - norm(refOpen)), dClose = Math.abs(norm(t) - norm(refClose));
+      if (c.singleTime.type === 'dom' || dClose <= dOpen) c.closeRaw = c.singleTime;
+      else c.openRaw = c.singleTime;
+      notices.push((c.label || c.name || 'CP') + 'は時刻が1つだけ書かれていたため、' +
+        (c.closeRaw ? 'Close' : 'Open') + 'として読みました。');
+    });
 
     // Open/Close を出走からの経過分に解決
     var resolved = X.resolveTimes(cps.map(function (c) { return { open: c.openRaw, close: c.closeRaw }; }), startDate);
