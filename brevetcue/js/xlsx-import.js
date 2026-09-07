@@ -8,13 +8,16 @@
   var ROLES = [
     { key: 'no',        label: 'No.',        kw: ['no', 'no.', '№', '番号', '番'] },
     { key: 'kind',      label: '種別',       kw: ['種別', '区分', 'チェック種別', 'cp種別', 'type', '種類'] },
-    { key: 'name',      label: '地点名',     kw: ['地点', '名称', '場所', 'チェックポイント', 'cp名', 'ポイント', '店名', 'pc', '通過チェック', 'name'] },
+    // 「地点までの道路番号」「地点までの区間」のような見出しを地点名と誤認しないよう avoid を持たせる
+    { key: 'name',      label: '地点名',     kw: ['地点', '名称', '場所', 'チェックポイント', 'cp名', 'ポイント', '店名', 'pc', '通過チェック', 'name'],
+      avoid: /距離|km|区間|積算|累積|道路|番号|時刻|open|close|進路/i },
     { key: 'dist',      label: '積算距離',   kw: ['積算', '累積', '通算', 'total', '積算距離', '距離(積算)', 'distance', '距離'] },
     { key: 'segDist',   label: '区間距離',   kw: ['区間', '区間距離', 'ラップ', 'lap', '次まで'] },
     { key: 'open',      label: 'Open',       kw: ['open', 'オープン', '開', '通過可能', 'ｵｰﾌﾟﾝ'] },
     { key: 'close',     label: 'Close',      kw: ['close', 'クローズ', '閉', '制限', 'ｸﾛｰｽﾞ', 'クローズ時刻'] },
     { key: 'direction', label: '進路',       kw: ['進路', '方向', '進行', '曲がる', '右左折', 'ターン', 'turn'] },
     { key: 'road',      label: '道路名',     kw: ['道路', '道路名', '経路', 'ルート', '路線', '道'] },
+    { key: 'sign',      label: '道標',       kw: ['道標', '青看板', '看板', '標識', '方面'] },
     { key: 'landmark',  label: 'ランドマーク', kw: ['目印', 'ランドマーク', '目標', '交差点', '目標物'] },
     { key: 'signal',    label: '信号',       kw: ['信号', 'signal', '信号機'] },
     { key: 'note',      label: '備考',       kw: ['備考', '注意', 'コメント', 'メモ', '補足', '注記', 'remarks'] }
@@ -64,6 +67,36 @@
     return best.score > 1 ? best.row : 0;
   }
 
+  /**
+   * 見出しが2行に分かれている表（「地点までの」の下に「区間」「積算」など）に対応する。
+   * 見出し行の直後が小見出し行なら、ラベルを連結して1行の見出しとして扱う。
+   * @returns {{headerRow:number, labels:Array<string>}} headerRow は見出しブロックの最終行
+   */
+  function resolveHeader(rows, startRow) {
+    var h = (startRow === undefined) ? guessHeaderRow(rows) : startRow;
+    var labels = (rows[h] || []).map(function (v) { return U.normalizeText(v); });
+
+    for (var step = 0; step < 2; step++) {
+      var next = rows[h + 1];
+      if (!next) break;
+      var texts = 0, numbers = 0, longText = 0;
+      next.forEach(function (v) {
+        if (v === null || v === undefined || String(v).trim() === '') return;
+        if (typeof v === 'number') numbers++;
+        else { texts++; if (U.normalizeText(v).length > 14) longText++; }
+      });
+      // 数値が入っている＝データ行。小見出しは短い文字列だけの行。
+      if (numbers > 0 || texts === 0 || longText > 1) break;
+      next.forEach(function (v, i) {
+        var t = U.normalizeText(v);
+        if (!t) return;
+        labels[i] = labels[i] ? (labels[i] + ' ' + t) : t;
+      });
+      h++;
+    }
+    return { headerRow: h, labels: labels };
+  }
+
   /** 見出しセルから列 → 役割 の推定マップを作る */
   function guessColumns(headerCells) {
     var map = {};
@@ -82,6 +115,7 @@
         // 「積算距離」と「区間距離」の取り違え防止
         if (role.key === 'dist' && /区間|ラップ/.test(v)) s = 0;
         if (role.key === 'segDist' && /積算|累積|通算/.test(v)) s = 0;
+        if (role.avoid && role.avoid.test(v)) s = 0;
         if (s > bestScore) { bestScore = s; bestCol = idx; }
       });
       if (bestCol >= 0) { map[role.key] = bestCol; used[bestCol] = true; }
@@ -188,6 +222,26 @@
     });
   }
 
+  /* ---------- 行のどこかにあるCP表記を拾う ---------- */
+  // 「PC1 セイコーマート木古内」「通過C1海のプール入口」「START 元町公園前」など、
+  // 主催者によっては地点名の列が無く、道標欄などにCP名が書かれている。
+  var CP_MARK = /^(start|goal|finish|ゴール|スタート|pc\s*\d*|cp\s*\d*|通過c\s*\d*|通過チェック\s*\d*|フォトチェック\s*\d*)[\s:：・]*(.*)$/i;
+
+  function findCpCell(row) {
+    for (var i = 0; i < row.length; i++) {
+      var v = row[i];
+      if (typeof v !== 'string') continue;
+      var t = U.normalizeText(v);
+      if (!t || t.length > 40) continue;
+      var m = t.match(CP_MARK);
+      if (!m) continue;
+      var kind = detectKind(m[1], '');
+      if (!kind) continue;
+      return { col: i, text: t, marker: m[1].trim(), name: (m[2] || '').trim() };
+    }
+    return null;
+  }
+
   /* ---------- 地点種別の判定 ---------- */
   function detectKind(kindText, nameText) {
     var s = (U.normalizeText(kindText) + ' ' + U.normalizeText(nameText)).toLowerCase();
@@ -216,6 +270,8 @@
     ROLES: ROLES,
     readWorkbook: readWorkbook,
     guessHeaderRow: guessHeaderRow,
+    resolveHeader: resolveHeader,
+    findCpCell: findCpCell,
     guessColumns: guessColumns,
     parseDistance: parseDistance,
     parseTimeCell: parseTimeCell,

@@ -64,9 +64,12 @@
   function applyWorkbook(buffer, filename) {
     var sheets = X.readWorkbook(buffer);
     state.sheets = sheets.map(function (s) {
-      var headerRow = X.guessHeaderRow(s.rows);
-      var colMap = X.guessColumns(s.rows[headerRow] || []);
-      return { name: s.name, rows: s.rows, headerRow: headerRow, colMap: colMap, role: guessRole(s.name, colMap) };
+      var h = X.resolveHeader(s.rows);
+      var colMap = X.guessColumns(h.labels);
+      return {
+        name: s.name, rows: s.rows, headerRow: h.headerRow, labels: h.labels,
+        colMap: colMap, role: guessRole(s.name, colMap)
+      };
     });
     $('status-xlsx').textContent = filename + '（' + sheets.length + 'シート）';
     $('drop-xlsx').classList.add('loaded');
@@ -173,15 +176,24 @@
 
   function renderSheetBody(sheet, si, host) {
     if (sheet.role === 'ignore') { host.innerHTML = ''; return; }
-    var header = sheet.rows[sheet.headerRow] || [];
-    var opts = '<option value="">（なし）</option>' + header.map(function (h, i) {
-      return '<option value="' + i + '">' + colName(i) + '列：' + U.escapeHtml(U.normalizeText(h) || '（無題）') + '</option>';
-    }).join('');
+    var header = sheet.labels || (sheet.rows[sheet.headerRow] || []).map(U.normalizeText);
+    var width = 0;
+    sheet.rows.forEach(function (r) { width = Math.max(width, r.length); });
+    var opts = '<option value="">（なし）</option>';
+    for (var ci = 0; ci < width; ci++) {
+      opts += '<option value="' + ci + '">' + colName(ci) + '列：' +
+        U.escapeHtml(header[ci] || '（無題）') + '</option>';
+    }
     var roleFields = X.ROLES.filter(function (r) {
       if (sheet.role === 'simple') return ['name', 'dist', 'segDist', 'open', 'close', 'kind', 'note'].indexOf(r.key) >= 0;
       return true;
     });
-    host.innerHTML =
+    var headerNote = (sheet.headerRow > X.guessHeaderRow(sheet.rows))
+      ? '<p class="note">見出しが' + (sheet.headerRow - X.guessHeaderRow(sheet.rows) + 1) +
+        '行に分かれていたため、小見出しを連結して判定しました（例：' +
+        U.escapeHtml((header.filter(function (t) { return t && t.indexOf(' ') > 0; })[0] || '')) + '）。</p>'
+      : '';
+    host.innerHTML = headerNote +
       '<div class="map-grid">' +
         '<label>見出し行（1始まり）<input type="number" min="1" max="' + sheet.rows.length + '" value="' + (sheet.headerRow + 1) + '" data-header="' + si + '"></label>' +
         roleFields.map(function (r) {
@@ -200,8 +212,10 @@
       });
     });
     host.querySelector('[data-header]').addEventListener('change', function (e) {
-      sheet.headerRow = Math.max(0, parseInt(e.target.value, 10) - 1);
-      sheet.colMap = X.guessColumns(sheet.rows[sheet.headerRow] || []);
+      var h = X.resolveHeader(sheet.rows, Math.max(0, parseInt(e.target.value, 10) - 1));
+      sheet.headerRow = h.headerRow;
+      sheet.labels = h.labels;
+      sheet.colMap = X.guessColumns(h.labels);
       renderSheetBody(sheet, si, host);
     });
     renderPreviewTable(sheet, host.querySelector('.tablewrap'));
@@ -212,10 +226,13 @@
     sheet.rows.forEach(function (r) { width = Math.max(width, r.length); });
     var mappedCols = {};
     Object.keys(sheet.colMap).forEach(function (k) { mappedCols[sheet.colMap[k]] = k; });
+    var labels = sheet.labels || [];
     var head = '<tr><th>行</th>';
     for (var c = 0; c < width; c++) {
-      head += '<th>' + colName(c) + (mappedCols[c] ? '<br><span style="color:var(--accent-2)">' +
-        (X.ROLES.filter(function (r) { return r.key === mappedCols[c]; })[0] || {}).label + '</span>' : '') + '</th>';
+      head += '<th>' + colName(c) +
+        (labels[c] ? '<br><span style="font-weight:400">' + U.escapeHtml(labels[c].slice(0, 14)) + '</span>' : '') +
+        (mappedCols[c] ? '<br><span style="color:var(--accent-2)">' +
+          (X.ROLES.filter(function (r) { return r.key === mappedCols[c]; })[0] || {}).label + '</span>' : '') + '</th>';
     }
     head += '</tr>';
     var body = '';

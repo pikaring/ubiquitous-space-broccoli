@@ -407,6 +407,7 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
                 '</div>' +
                 (c.road ? '<div class="turn-road">' + esc(c.road) + '</div>' : '') +
                 (c.name && !c.road ? '<div class="turn-road">' + esc(c.name) + '</div>' : '') +
+                (c.sign ? '<div class="turn-landmark">道標「' + esc(c.sign) + '」</div>' : '') +
                 (c.landmark ? '<div class="turn-landmark">' + esc(c.landmark) + '</div>' : '') +
                 (c.note ? '<div class="turn-landmark">' + esc(c.note) + '</div>' : '') +
               '</div>' +
@@ -887,6 +888,7 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
         if (c.kind === 'turn') {
           o.no = c.no; o.direction = c.direction; o.directionText = c.directionText || '';
           o.road = c.road || ''; o.landmark = c.landmark || ''; o.note = c.note || '';
+          o.sign = c.sign || '';
           o.name = c.name || ''; o.signal = (c.signal === null || c.signal === undefined) ? null : c.signal;
         } else {
           o.label = c.label; o.name = c.name || ''; o.note = c.note || '';
