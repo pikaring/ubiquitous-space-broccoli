@@ -174,6 +174,26 @@ check('取得失敗時に理由と接続先を表示する',
   /取得できませんでした/.test(errText) && /api\.open-meteo\.com/.test(errText), errText);
 check('再試行ボタンが出る', await errPanel.locator('.wx-retry').count() === 1);
 
+/* 地図アプリへのリンク（iOSで埋め込み地図が出せないときの逃げ道） */
+const mapLinks = await frame.locator('#cue-list .wx-panel.open .wx-map-links a').first()
+  .locator('xpath=../a').allTextContents();
+check('地図アプリへのリンクを並べる',
+  mapLinks.length === 3 && /OpenStreetMap/.test(mapLinks[0]) && /Apple/.test(mapLinks[1]) && /Google/.test(mapLinks[2]),
+  mapLinks.join(' / '));
+
+/* iOSのChrome/Edgeがローカルファイルを開く内部スキーム（edge://external-file）を再現 */
+const outFrame = page.frames().find(f => f !== page.mainFrame());
+await outFrame.evaluate(() => { window.__CUE_SCHEME__ = 'app'; });
+await frame.locator('#cue-list .wx-toggle-btn').nth(30).click();
+const appPanel = frame.locator('#cue-list .wx-panel.open').nth(2);
+await appPanel.locator('.wx-net-note').waitFor({ timeout: 5000 });
+const appText = (await appPanel.locator('.wx-net-note').innerText()).replace(/\n+/g, ' ');
+check('内部スキームでは待たずに理由を出す',
+  /端末内のファイル/.test(appText) && /オンラインのURLから開くと表示されます/.test(appText), appText.slice(0, 70) + '…');
+check('内部スキームでは空の地図枠を出さない',
+  await appPanel.locator('iframe').count() === 0 && await appPanel.locator('.wx-map-links a').count() === 3);
+await outFrame.evaluate(() => { delete window.__CUE_SCHEME__; });
+
 /* マッチング精度レポート */
 const reportRows = await page.locator('#report tbody tr').count();
 check('座標マッチング結果を出力する', reportRows === cueCount, `${reportRows}行 / 出力${cueCount}行`);
