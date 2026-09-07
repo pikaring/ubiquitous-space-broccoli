@@ -175,8 +175,8 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
 .rt-scale text { fill:var(--text-main); font-size:10px; font-weight:700; opacity:.85; }
 .wx-stamp { font-size:11px; color:var(--text-sub); text-align:center; margin:-4px 0 8px; }
 @media (prefers-color-scheme: dark) { .wx-static-map img { filter:invert(.92) hue-rotate(180deg) brightness(1.05) contrast(.95); } }
-.wx-map-links { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:10px; }
-.wx-map-links a { flex:1; min-width:120px; text-align:center; background:var(--bg-card-alt); color:var(--accent-blue); border-radius:10px; padding:10px 8px; font-size:14px; font-weight:700; text-decoration:none; }
+.wx-map-tap { display:block; text-decoration:none; color:inherit; -webkit-tap-highlight-color:transparent; }
+.wx-map-tap:active .wx-static-map, .wx-map-tap:active .wx-sketch { opacity:.75; }
 .wx-outofrange { font-size:14px; color:var(--accent-gold); background:var(--bg-card-alt); border-radius:10px; padding:12px; text-align:center; font-weight:700; margin-bottom:10px; line-height:1.5; }
 .wx-net-note { font-size:13px; color:var(--accent-gold); background:var(--bg-card-alt); border-radius:10px; padding:10px 12px; margin-top:8px; font-weight:600; line-height:1.5; }
 .wx-error .wx-sub { display:block; margin-top:5px; font-size:12px; font-weight:600; color:var(--text-sub); }
@@ -551,15 +551,12 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
       return 'オフラインか、組織のプロキシ／フィルタでブロックされている可能性があります。' + tail;
     }
 
-    /* 地図アプリへのリンク（埋め込み地図が出せないときの逃げ道にもなる） */
-    function mapLinksHtml(lat, lon) {
-      return '<div class="wx-map-links">' +
-        '<a href="https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon + '#map=18/' + lat + '/' + lon +
-          '" target="_blank" rel="noopener">OpenStreetMap ↗</a>' +
-        '<a href="https://maps.apple.com/?q=' + lat + ',' + lon + '" target="_blank" rel="noopener">マップ（Apple）↗</a>' +
-        '<a href="https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lon +
-          '" target="_blank" rel="noopener">Googleマップ ↗</a>' +
-        '</div>';
+    /* 地図・略図をタップしたらGoogleマップを開く（iOSではマップアプリが起動する） */
+    function gmapUrl(lat, lon) {
+      return 'https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lon;
+    }
+    function tapWrap(lat, lon, inner) {
+      return '<a class="wx-map-tap" href="' + gmapUrl(lat, lon) + '" target="_blank" rel="noopener">' + inner + '</a>';
     }
     function fetchWithTimeout(url, ms, opt) {
       var ctl = new AbortController();
@@ -634,7 +631,7 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
     }
 
     /** 埋め込みタイルを並べて静止地図を作る（通信不要） */
-    function staticMapHtml(uid, lat) {
+    function staticMapHtml(uid, lat, lon) {
       var m = offlineMap();
       if (!m || !m.layout || !m.layout[uid]) return '';
       var L = m.layout[uid], W = m.w, H = m.h;
@@ -651,19 +648,21 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
         }
       }
       if (!got) return '';
-      return '<div class="wx-static-map" style="width:' + W + 'px;height:' + H + 'px">' + imgs +
+      return tapWrap(lat, lon,
+        '<div class="wx-static-map" style="width:' + W + 'px;height:' + H + 'px">' + imgs +
         sketchSvg(uid, W, H, lat, false) + '<div class="wx-static-pin"></div></div>' +
-        '<div class="wx-attr">' + esc(m.attr || '') + '（赤い線＝進む向き）</div>';
+        '<div class="wx-attr">' + esc(m.attr || '') + '・赤い線＝進む向き／タップでGoogleマップ</div>');
     }
 
     /** タイルが無い地点用：略図だけを描く */
-    function sketchBoxHtml(uid, lat) {
+    function sketchBoxHtml(uid, lat, lon) {
       var W = (offlineMap() && offlineMap().w) || 320, H = (offlineMap() && offlineMap().h) || 192;
       var svg = sketchSvg(uid, W, H, lat, true);
       if (!svg) return '';
-      return '<div class="wx-sketch" style="width:' + W + 'px;height:' + H + 'px">' + svg +
+      return tapWrap(lat, lon,
+        '<div class="wx-sketch" style="width:' + W + 'px;height:' + H + 'px">' + svg +
         '<div class="wx-static-pin"></div></div>' +
-        '<div class="wx-attr">GPXから起こしたコースの形（北が上／灰＝手前、赤＝進む向き）</div>';
+        '<div class="wx-attr">GPXから起こしたコースの形（北が上／灰＝手前、赤＝進む向き）／タップでGoogleマップ</div>');
     }
 
     /** 埋め込み予報から、その地点・その時刻に一番近い値を取り出す */
@@ -704,25 +703,26 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
       var brg = parseFloat(panel.dataset.brg || '0');
       var dist = parseFloat(panel.dataset.dist || '0');
       var uid = panel.dataset.uid;
-      var tiles = staticMapHtml(uid, lat);
+      var tiles = staticMapHtml(uid, lat, lon);
       var mapUrl = 'https://www.openstreetmap.org/export/embed.html?bbox=' +
         (lon - 0.0025) + '%2C' + (lat - 0.0015) + '%2C' + (lon + 0.0025) + '%2C' + (lat + 0.0015) +
         '&layer=mapnik&marker=' + lat + '%2C' + lon;
 
       if (tiles) {
         // 焼き込んだ地図なら通信不要
-        panel.innerHTML = '<div class="wx-body"></div>' + tiles + mapLinksHtml(lat, lon);
+        panel.innerHTML = '<div class="wx-body"></div>' + tiles;
       } else if (scheme() === 'web') {
         panel.innerHTML = '<div class="wx-body"></div>' +
           '<div class="wx-map-frame"><iframe loading="lazy" src="' + mapUrl + '"></iframe></div>' +
-          '<div class="wx-net-note" hidden></div>' + mapLinksHtml(lat, lon);
+          '<div class="wx-net-note" hidden></div>';
         probeMap(panel, mapUrl);
       } else {
         // 端末内のファイルとして開いている：まず略図を出し、通信できるようなら地図に差し替える
         panel.innerHTML = '<div class="wx-body"></div>' +
-          '<div class="wx-mapslot">' + (sketchBoxHtml(uid, lat) ||
-            '<div class="wx-net-note">📱 ' + localSchemeNote() + '</div>') + '</div>' +
-          mapLinksHtml(lat, lon);
+          '<div class="wx-mapslot">' + (sketchBoxHtml(uid, lat, lon) ||
+            '<div class="wx-net-note">📱 ' + localSchemeNote() +
+            '<br><a href="' + gmapUrl(lat, lon) + '" target="_blank" rel="noopener">Googleマップで開く ↗</a></div>') +
+          '</div>';
         fetchWithTimeout(mapUrl, 8000, { mode: 'no-cors' }).then(function () {
           var slot = panel.querySelector('.wx-mapslot');
           if (slot) {

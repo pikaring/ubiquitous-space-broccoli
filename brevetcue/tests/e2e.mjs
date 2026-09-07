@@ -197,11 +197,7 @@ check('通信できないときは埋め込み予報に切り替わる',
   /埋め込み分を表示/.test(await fbPanel.locator('.wx-stamp').innerText()),
   await fbPanel.locator('.wx-stamp').innerText());
 
-/* 地図アプリへのリンク（iOSで埋め込み地図が出せないときの逃げ道） */
-const mapLinks = await turnPanel.locator('.wx-map-links a').allTextContents();
-check('地図アプリへのリンクを並べる',
-  mapLinks.length === 3 && /OpenStreetMap/.test(mapLinks[0]) && /Apple/.test(mapLinks[1]) && /Google/.test(mapLinks[2]),
-  mapLinks.join(' / '));
+check('地図の下にリンク行を置かない', await turnPanel.locator('.wx-map-links').count() === 0);
 
 /* iOSのChrome/Edgeがローカルファイルを開く内部スキーム（edge://external-file）を再現 */
 const outFrame = page.frames().find(f => f !== page.mainFrame());
@@ -214,8 +210,10 @@ check('タイルを埋め込まなかった地点はGPXの略図を出す',
   await appPanel.locator('.wx-sketch svg polygon.rt-arrow').count() === 1 &&
   /北が上/.test(await appPanel.locator('.wx-attr').innerText()),
   await appPanel.locator('.wx-attr').innerText());
-check('内部スキームでは空の地図枠を出さない',
-  await appPanel.locator('iframe').count() === 0 && await appPanel.locator('.wx-map-links a').count() === 3);
+check('内部スキームでは空の地図枠を出さない', await appPanel.locator('iframe').count() === 0);
+const sketchHref = await appPanel.locator('a.wx-map-tap').first().getAttribute('href');
+check('略図をタップするとGoogleマップに飛ぶ',
+  /google\.com\/maps\/search\/\?api=1&query=4[23]\.\d+,14[01]\.\d+/.test(sketchHref), sketchHref);
 check('埋め込み天気は待たずに出る',
   /埋め込み予報/.test(await appPanel.locator('.wx-stamp').innerText()) &&
   !/通信できないため/.test(await appPanel.locator('.wx-stamp').innerText()),
@@ -230,6 +228,10 @@ check('通信なしで埋め込み地図を表示する',
   await cpPanel.locator('.wx-static-map svg path.rt-out').count() === 1 &&
   /地理院タイル/.test(await cpPanel.locator('.wx-attr').innerText()),
   (await cpPanel.locator('.wx-static-map img').count()) + 'タイル / ' + await cpPanel.locator('.wx-attr').innerText());
+const tileHref = await cpPanel.locator('a.wx-map-tap').first().getAttribute('href');
+check('埋め込み地図をタップするとGoogleマップに飛ぶ',
+  /google\.com\/maps\/search\/\?api=1&query=/.test(tileHref) &&
+  await cpPanel.locator('a.wx-map-tap .wx-static-map').count() === 1, tileHref);
 const embWx = (await cpPanel.locator('.wx-weather-card').innerText()).replace(/\n+/g, ' ');
 check('通信なしで埋め込み天気を表示する',
   /12\.3℃/.test(embWx) && /5\.6m\/s/.test(embWx) && /埋め込み予報/.test(await cpPanel.locator('.wx-stamp').innerText()), embWx);
