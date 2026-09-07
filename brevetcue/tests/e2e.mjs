@@ -1,0 +1,193 @@
+/* Playwrightによる通しテスト
+   使い方: node tests/e2e.mjs [--headed]
+   ・サンプルGPX/Excelを読み込ませ、生成→プレビューまでを検証する */
+/* playwrightはグローバル導入でも動くよう動的に解決する */
+async function loadPlaywright() {
+  const candidates = [process.env.PLAYWRIGHT_MODULE, 'playwright',
+    '/opt/node22/lib/node_modules/playwright/index.js',
+    '/usr/lib/node_modules/playwright/index.js'].filter(Boolean);
+  for (const c of candidates) {
+    try { return await import(c); } catch (e) { /* 次の候補を試す */ }
+  }
+  throw new Error('playwright が見つかりません（npm i -g playwright）');
+}
+const pw = await loadPlaywright();
+const chromium = pw.chromium || (pw.default && pw.default.chromium);
+import { createServer } from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const OUT = process.env.OUT_DIR || '/tmp';
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.gpx': 'application/gpx+xml', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+
+const server = createServer((req, res) => {
+  const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
+  const file = path.join(root, rel);
+  if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end('404'); }
+  res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
+  res.end(fs.readFileSync(file));
+});
+await new Promise(r => server.listen(0, r));
+const base = `http://127.0.0.1:${server.address().port}/`;
+
+const results = [];
+function check(name, cond, extra = '') {
+  results.push({ name, ok: !!cond, extra });
+  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${extra ? '  → ' + extra : ''}`);
+}
+
+const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
+const page = await browser.newPage({ viewport: { width: 430, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
+const errors = [];
+page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+
+await page.goto(base, { waitUntil: 'load' });
+
+/* --- STEP1: ファイル読み込み --- */
+await page.setInputFiles('#file-gpx', path.join(root, 'samples/demo.gpx'));
+await page.setInputFiles('#file-xlsx', path.join(root, 'samples/demo.xlsx'));
+await page.waitForSelector('#step2:not(.hidden)');
+
+const gpxStatus = await page.textContent('#status-gpx');
+check('GPXを読み込める', /215\.\d ?km/.test(gpxStatus), gpxStatus);
+
+const sheetRoles = await page.$$eval('[data-role]', els => els.map(e => e.value));
+check('シート種別を自動推定できる', sheetRoles[0] === 'simple' && sheetRoles[1] === 'detail', JSON.stringify(sheetRoles));
+
+const mapped = await page.$$eval('#sheets .sheet:first-child select[data-col]', els =>
+  Object.fromEntries(els.map(e => [e.dataset.col, e.value])));
+check('簡易シートの列を自動割当できる',
+  mapped.name !== '' && mapped.dist !== '' && mapped.open !== '' && mapped.close !== '', JSON.stringify(mapped));
+
+const title = await page.inputValue('#opt-title');
+const dateVal = await page.inputValue('#opt-date');
+const timeVal = await page.inputValue('#opt-time');
+check('大会名・出走日時を推測できる', /デモBRM1010/.test(title) && dateVal.endsWith('-10-10') && timeVal === '18:00',
+  `${title} / ${dateVal} ${timeVal}`);
+
+/* --- STEP3: 生成 --- */
+await page.click('#btn-generate');
+await page.waitForSelector('#step4:not(.hidden)');
+check('生成でエラーが出ない', await page.isHidden('#gen-error'));
+
+const frame = page.frameLocator('#preview');
+await frame.locator('#cp-list .cp-item').first().waitFor();
+
+const cpCount = await frame.locator('#cp-list .cp-item').count();
+check('簡易版に6CPが並ぶ', cpCount === 6, `${cpCount}件`);
+
+const cueCount = await frame.locator('#cue-list > div').count();
+check('詳細版に全ポイントが並ぶ', cueCount >= 50, `${cueCount}行`);
+
+const firstEta = await frame.locator('#cp-list [data-eta] .eta-time').first().textContent();
+check('ETAが計算される', /^\d{2}:\d{2}$/.test(firstEta), firstEta);
+
+const goalClose = await frame.locator('#banner-goalclose').textContent();
+check('日跨ぎのCloseが「翌」表記になる', /翌\d{2}:\d{2}/.test(goalClose), goalClose);
+
+const sun = await frame.locator('#banner-sun').textContent();
+const sunM = sun.match(/日出(\d{2}):(\d{2}).*日没(\d{2}):(\d{2})/);
+check('日出・日没を計算する（JST）',
+  sunM && +sunM[1] >= 4 && +sunM[1] <= 7 && +sunM[3] >= 16 && +sunM[3] <= 19, sun);
+
+/* 速度ステッパー → ETAが変わる */
+const etaBefore = await frame.locator('#cp-list [data-eta] .eta-time').last().textContent();
+await frame.locator('nav button[data-view="simple"]').click();
+await frame.locator('.settings .stepper-btn', { hasText: '+1' }).first().click();
+const etaAfter = await frame.locator('#cp-list [data-eta] .eta-time').last().textContent();
+check('速度変更でETAが更新される', etaBefore !== etaAfter, `${etaBefore} → ${etaAfter}`);
+
+/* 距離補正 */
+const distBefore = await frame.locator('#cp-list .dist-val').last().textContent();
+await frame.locator('.settings .stepper-btn.big', { hasText: '+1' }).click();
+const distAfter = await frame.locator('#cp-list .dist-val').last().textContent();
+check('距離補正で距離表示が一斉に変わる',
+  Math.abs(parseFloat(distAfter) - parseFloat(distBefore) - 1) < 0.001, `${distBefore} → ${distAfter}`);
+await frame.locator('.link-btn', { hasText: 'リセット' }).click();
+
+/* 休憩ステッパー */
+await frame.locator('#cp-list .cp-item').nth(1).locator('.cp-head').click();
+const etaGoalBefore = await frame.locator('#cp-list [data-eta] .eta-time').last().textContent();
+await frame.locator('#cp-list .cp-item').nth(1).locator('.rest-btn', { hasText: '+3時間' }).click();
+const etaGoalAfter = await frame.locator('#cp-list [data-eta] .eta-time').last().textContent();
+check('休憩（宿泊）でその先のETAがシフトする', etaGoalBefore !== etaGoalAfter, `${etaGoalBefore} → ${etaGoalAfter}`);
+
+/* 詳細タブ */
+await frame.locator('nav button[data-view="detail"]').click();
+const turnArrows = await frame.locator('#cue-list .turn-arrow').count();
+check('詳細版に進路アイコンが出る', turnArrows > 40, `${turnArrows}個`);
+const roadText = await frame.locator('#cue-list .turn-road').first().textContent();
+check('道路名がExcelから取り込まれる', /→/.test(roadText), roadText);
+const cpRowsInDetail = await frame.locator('#cue-list .cp-row').count();
+check('詳細版にもCP行が重複なく入る', cpRowsInDetail === 6, `${cpRowsInDetail}行`);
+
+/* 天気・地図パネル（地図のみ・通信は行わせない） */
+await page.route('**/api.open-meteo.com/**', route => route.abort());
+await frame.locator('#cue-list .wx-toggle-btn').first().click();
+await frame.locator('#cue-list .wx-panel.open iframe').first().waitFor({ state: 'attached' });
+const mapSrc = await frame.locator('#cue-list .wx-panel.open iframe').first().getAttribute('src');
+check('地図パネルが該当座標で開く', /openstreetmap\.org\/export\/embed/.test(mapSrc) && /marker=42\./.test(mapSrc));
+
+/* マッチング精度レポート */
+const reportRows = await page.locator('#report tbody tr').count();
+check('座標マッチング結果を出力する', reportRows === cueCount, `${reportRows}行 / 出力${cueCount}行`);
+const wptSnap = await page.textContent('#report');
+check('ウェイポイント名の一致でスナップする', /ウェイポイント/.test(wptSnap));
+
+/* 生成物を保存 */
+const html = await page.evaluate(async () => {
+  const res = await fetch(document.getElementById('preview').src);
+  return res.text();
+});
+fs.writeFileSync(path.join(OUT, 'demo-cuesheet.html'), html);
+check('生成HTMLが単一ファイルで完結する',
+  !/<script[^>]+src=/.test(html) && !/<link[^>]+stylesheet/.test(html), `${(html.length / 1024).toFixed(0)}KB`);
+
+await page.screenshot({ path: path.join(OUT, 'shot-generator.png'), fullPage: false });
+const pv = await page.$('#preview');
+await pv.screenshot({ path: path.join(OUT, 'shot-output-detail.png') });
+await frame.locator('nav button[data-view="simple"]').click();
+await pv.screenshot({ path: path.join(OUT, 'shot-output-simple.png') });
+
+/* ダークモード */
+await page.emulateMedia({ colorScheme: 'dark' });
+await pv.screenshot({ path: path.join(OUT, 'shot-output-simple-dark.png') });
+const bg = await frame.locator('body').evaluate(el => getComputedStyle(el).backgroundColor);
+check('ダークモードで背景が黒になる', bg === 'rgb(0, 0, 0)', bg);
+await page.emulateMedia({ colorScheme: 'light' });
+
+/* ================= シナリオ2：GPXのみ（Excel無し） ================= */
+const page2 = await browser.newPage({ viewport: { width: 430, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
+page2.on('pageerror', e => errors.push('pageerror(gpx only): ' + e.message));
+page2.on('console', m => { if (m.type() === 'error') errors.push('console(gpx only): ' + m.text()); });
+await page2.goto(base, { waitUntil: 'load' });
+await page2.setInputFiles('#file-gpx', path.join(root, 'samples/demo.gpx'));
+await page2.fill('#opt-date', '2026-10-10');
+await page2.fill('#opt-time', '18:00');
+await page2.click('#btn-generate');
+await page2.waitForSelector('#step4:not(.hidden)');
+const warn = await page2.textContent('#gen-error');
+check('GPXのみでも生成でき、補完内容が警告される',
+  /ウェイポイント/.test(warn) && /ACP基準/.test(warn) && /自動抽出/.test(warn), warn.replace(/\n/g, ' / '));
+const f2 = page2.frameLocator('#preview');
+await f2.locator('#cp-list .cp-item').first().waitFor();
+const cp2 = await f2.locator('#cp-list .cp-item').count();
+check('GPXのウェイポイントからCPを構成する', cp2 === 6, `${cp2}件`);
+const close2 = await f2.locator('#cp-list .chip-close').last().textContent();
+check('ACP基準のCloseが入る', /Close(翌)?\d{2}:\d{2}/.test(close2.replace(/\s/g, '')), close2.replace(/\s+/g, ''));
+await f2.locator('nav button[data-view="detail"]').click();
+const autoTurns = await f2.locator('#cue-list .turn-arrow').count();
+check('GPXから曲がり角を自動抽出する', autoTurns >= 40 && autoTurns <= 70, `${autoTurns}個`);
+await page2.close();
+
+check('JSエラーが発生しない', errors.length === 0, errors.join(' | '));
+
+await browser.close();
+server.close();
+
+const failed = results.filter(r => !r.ok);
+console.log(`\n${results.length - failed.length}/${results.length} passed`);
+process.exit(failed.length ? 1 : 0);
