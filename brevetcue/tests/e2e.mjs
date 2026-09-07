@@ -41,8 +41,13 @@ function check(name, cond, extra = '') {
 const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
 const page = await browser.newPage({ viewport: { width: 430, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
 const errors = [];
+// 意図的にリクエストを遮断する区間では、ネットワーク由来のconsoleエラーは無視する
+let allowNetErrors = false;
+const isNetError = t => /Failed to load resource|net::ERR/.test(t);
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
-page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+page.on('console', m => {
+  if (m.type() === 'error' && !(allowNetErrors && isNetError(m.text()))) errors.push('console: ' + m.text());
+});
 
 await page.goto(base, { waitUntil: 'load' });
 
@@ -124,12 +129,50 @@ check('道路名がExcelから取り込まれる', /→/.test(roadText), roadTex
 const cpRowsInDetail = await frame.locator('#cue-list .cp-row').count();
 check('詳細版にもCP行が重複なく入る', cpRowsInDetail === 6, `${cpRowsInDetail}行`);
 
-/* 天気・地図パネル（地図のみ・通信は行わせない） */
-await page.route('**/api.open-meteo.com/**', route => route.abort());
+/* 天気・地図パネル：Open-Meteoの応答をスタブして描画を検証する */
+const day = new Date(Date.now() + 2 * 86400000);
+const ymd = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+const hours = Array.from({ length: 24 }, (_, h) => `${ymd}T${String(h).padStart(2, '0')}:00`);
+const canned = {
+  hourly: {
+    time: hours,
+    temperature_2m: hours.map(() => 12.3),
+    precipitation: hours.map(() => 0.4),
+    windspeed_10m: hours.map(() => 5.6),
+    winddirection_10m: hours.map(() => 90)   // 東風
+  }
+};
+await page.route('**/api.open-meteo.com/**', route =>
+  route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(canned) }));
+await page.route('**/openstreetmap.org/**', route =>
+  route.fulfill({ status: 200, contentType: 'text/html', body: '<p>map stub</p>' }));
+
+// 予報範囲内の日付にする
+await frame.locator('#start-date').fill(ymd);
+await frame.locator('#start-date').dispatchEvent('change');
 await frame.locator('#cue-list .wx-toggle-btn').first().click();
 await frame.locator('#cue-list .wx-panel.open iframe').first().waitFor({ state: 'attached' });
 const mapSrc = await frame.locator('#cue-list .wx-panel.open iframe').first().getAttribute('src');
 check('地図パネルが該当座標で開く', /openstreetmap\.org\/export\/embed/.test(mapSrc) && /marker=42\./.test(mapSrc));
+
+await frame.locator('#cue-list .wx-weather-card').first().waitFor({ timeout: 15000 });
+const wxText = (await frame.locator('#cue-list .wx-weather-card').first().innerText()).replace(/\n+/g, ' ');
+check('天気カードに気温・風・降水量が出る',
+  /12\.3℃/.test(wxText) && /5\.6m\/s/.test(wxText) && /0\.4mm/.test(wxText) && /東/.test(wxText), wxText);
+check('進行方位と風向から向かい風／追い風を判定する',
+  /向かい風|追い風|横風/.test(wxText), wxText.split(' ')[0]);
+
+/* 通信できない場合：理由と再試行ボタンが出る */
+allowNetErrors = true;
+await page.unroute('**/api.open-meteo.com/**');
+await page.route('**/api.open-meteo.com/**', route => route.abort());
+await frame.locator('#cue-list .wx-toggle-btn').nth(25).click();
+const errPanel = frame.locator('#cue-list .wx-panel.open').nth(1);
+await errPanel.locator('.wx-error').waitFor({ timeout: 20000 });
+const errText = (await errPanel.locator('.wx-error').innerText()).replace(/\n+/g, ' ');
+check('取得失敗時に理由と接続先を表示する',
+  /取得できませんでした/.test(errText) && /api\.open-meteo\.com/.test(errText), errText);
+check('再試行ボタンが出る', await errPanel.locator('.wx-retry').count() === 1);
 
 /* マッチング精度レポート */
 const reportRows = await page.locator('#report tbody tr').count();
@@ -162,7 +205,9 @@ await page.emulateMedia({ colorScheme: 'light' });
 /* ================= シナリオ2：GPXのみ（Excel無し） ================= */
 const page2 = await browser.newPage({ viewport: { width: 430, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
 page2.on('pageerror', e => errors.push('pageerror(gpx only): ' + e.message));
-page2.on('console', m => { if (m.type() === 'error') errors.push('console(gpx only): ' + m.text()); });
+page2.on('console', m => {
+  if (m.type() === 'error' && !isNetError(m.text())) errors.push('console(gpx only): ' + m.text());
+});
 await page2.goto(base, { waitUntil: 'load' });
 await page2.setInputFiles('#file-gpx', path.join(root, 'samples/demo.gpx'));
 await page2.fill('#opt-date', '2026-10-10');

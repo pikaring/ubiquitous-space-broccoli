@@ -160,7 +160,10 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
 .wx-map-frame { width:100%; height:220px; border-radius:12px; overflow:hidden; border:1px solid var(--border-color); }
 .wx-map-frame iframe { width:100%; height:100%; border:none; }
 .wx-map-link { display:block; text-align:center; font-size:15px; color:var(--accent-blue); margin-top:8px; font-weight:700; }
-.wx-outofrange { font-size:14px; color:var(--accent-gold); background:var(--bg-card-alt); border-radius:10px; padding:12px; text-align:center; font-weight:700; margin-bottom:10px; }
+.wx-outofrange { font-size:14px; color:var(--accent-gold); background:var(--bg-card-alt); border-radius:10px; padding:12px; text-align:center; font-weight:700; margin-bottom:10px; line-height:1.5; }
+.wx-net-note { font-size:13px; color:var(--accent-gold); background:var(--bg-card-alt); border-radius:10px; padding:10px 12px; margin-top:8px; font-weight:600; line-height:1.5; }
+.wx-error .wx-sub { display:block; margin-top:5px; font-size:12px; font-weight:600; color:var(--text-sub); }
+.wx-retry { border:none; border-radius:8px; background:var(--accent-blue); color:#fff; font-size:14px; font-weight:700; padding:8px 18px; cursor:pointer; font-family:inherit; }
 @media (prefers-color-scheme: dark) {
   .wx-map-frame iframe { filter:invert(.92) hue-rotate(180deg) brightness(1.05) contrast(.95); }
 }
@@ -493,36 +496,80 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
         loadWx(panel);
       }
     }
+    function fmtDateTime(d) {
+      return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    }
+    /* 通信できなかった理由の見立て（庁内プロキシ・フィルタ環境を想定） */
+    function netHint(err) {
+      if (navigator.onLine === false) return 'この端末は現在オフラインです。';
+      if (err && err.name === 'AbortError') return '応答がありませんでした（タイムアウト）。組織のプロキシ／フィルタでブロックされている可能性があります。';
+      return 'オフラインか、組織のプロキシ／フィルタでブロックされている可能性があります。';
+    }
+    function fetchWithTimeout(url, ms, opt) {
+      var ctl = new AbortController();
+      var id = setTimeout(function () { ctl.abort(); }, ms);
+      var o = opt || {};
+      o.signal = ctl.signal;
+      return fetch(url, o).then(
+        function (r) { clearTimeout(id); return r; },
+        function (e) { clearTimeout(id); throw e; }
+      );
+    }
+
     function loadWx(panel) {
       var lat = parseFloat(panel.dataset.lat), lon = parseFloat(panel.dataset.lon);
       var brg = parseFloat(panel.dataset.brg || '0');
       var dist = parseFloat(panel.dataset.dist || '0');
-      var mapHtml =
-        '<div class="wx-map-frame"><iframe loading="lazy" src="https://www.openstreetmap.org/export/embed.html?bbox=' +
+      var mapUrl = 'https://www.openstreetmap.org/export/embed.html?bbox=' +
         (lon - 0.0025) + '%2C' + (lat - 0.0015) + '%2C' + (lon + 0.0025) + '%2C' + (lat + 0.0015) +
-        '&layer=mapnik&marker=' + lat + '%2C' + lon + '"></iframe></div>' +
-        '<a class="wx-map-link" href="https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon +
-        '#map=18/' + lat + '/' + lon + '" target="_blank" rel="noopener">大きな地図で開く ↗</a>';
+        '&layer=mapnik&marker=' + lat + '%2C' + lon;
+      var linkUrl = 'https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon + '#map=18/' + lat + '/' + lon;
+      panel.innerHTML =
+        '<div class="wx-body"></div>' +
+        '<div class="wx-map-frame"><iframe loading="lazy" src="' + mapUrl + '"></iframe></div>' +
+        '<div class="wx-net-note" hidden></div>' +
+        '<a class="wx-map-link" href="' + linkUrl + '" target="_blank" rel="noopener">大きな地図で開く ↗</a>';
+      probeMap(panel, mapUrl);
+      loadWeather(panel, lat, lon, brg, dist);
+    }
 
+    /* 地図は表示されなくてもエラーを出せない（別オリジンのiframe）ため、
+       同じURLへの到達性だけ確かめて、駄目そうなら理由を書き添える */
+    function probeMap(panel, url) {
+      var note = panel.querySelector('.wx-net-note');
+      fetchWithTimeout(url, 10000, { mode: 'no-cors' }).catch(function (e) {
+        note.hidden = false;
+        note.innerHTML = '🗺 地図（openstreetmap.org）への接続を確認できませんでした。' +
+          '上に地図が表示されていれば問題ありません。<br>' + esc(netHint(e)) +
+          '<br>地図はオンラインのときだけ表示されます（キューシート本体はオフラインで見られます）。';
+      });
+    }
+
+    function loadWeather(panel, lat, lon, brg, dist) {
+      var body = panel.querySelector('.wx-body');
       var start = startDateTime();
-      if (!start) { panel.innerHTML = '<div class="wx-error">出走日時を設定してください</div>' + mapHtml; return; }
+      if (!start) { body.innerHTML = '<div class="wx-error">出走日時を設定してください</div>'; return; }
+
       var eta = new Date(start.getTime() + etaMinForDist(dist) * 60000);
       var diffDays = (eta - new Date()) / 86400000;
       if (diffDays < -0.5 || diffDays > 16) {
-        panel.innerHTML = '<div class="wx-outofrange">⚠️ ' +
-          eta.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) +
-          ' は天気予報の範囲外です（予報は概ね16日先まで）</div>' + mapHtml;
+        body.innerHTML = '<div class="wx-outofrange">⚠️ 通過予定 ' + fmtDateTime(eta) +
+          ' は天気予報の範囲外です<br>予報は本日から概ね16日先まで（Open-Meteoの仕様）。開催が近づくと表示されます。</div>';
         return;
       }
-      panel.innerHTML = '<div class="wx-loading">天気を取得中…</div>' + mapHtml;
+      body.innerHTML = '<div class="wx-loading">天気を取得中…</div>';
+
       var key = lat.toFixed(2) + ',' + lon.toFixed(2);
       var p = wxCache[key];
       if (!p) {
-        p = fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
-          '&hourly=temperature_2m,precipitation,windspeed_10m,winddirection_10m&timezone=Asia%2FTokyo&forecast_days=16')
-          .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); });
+        p = fetchWithTimeout('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
+          '&hourly=temperature_2m,precipitation,windspeed_10m,winddirection_10m&timezone=Asia%2FTokyo&forecast_days=16', 10000)
+          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+        // 失敗した結果はキャッシュに残さない（再試行できるように）
+        p.catch(function () { delete wxCache[key]; });
         wxCache[key] = p;
       }
+
       p.then(function (data) {
         var times = data.hourly.time;
         var target = eta.getFullYear() + '-' + pad2(eta.getMonth() + 1) + '-' + pad2(eta.getDate()) + 'T' + pad2(eta.getHours());
@@ -535,23 +582,25 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
         var temp = data.hourly.temperature_2m[idx], rain = data.hourly.precipitation[idx];
         var ws = data.hourly.windspeed_10m[idx], wd = data.hourly.winddirection_10m[idx];
         var rel = windRelation(brg, wd), info = relationLabel(rel);
-        var card = document.createElement('div');
-        card.className = 'wx-weather-card';
-        card.innerHTML =
-          '<div class="wx-wind-arrow ' + rel + '"><span class="arrow-icon">' + info.icon + '</span>' +
-          '<span class="arrow-label">' + info.label + '</span></div>' +
-          '<div class="wx-details">' +
-            '<div class="wx-item"><span class="wx-label">ETA</span><span class="wx-value">' +
-              (eta.getMonth() + 1) + '/' + eta.getDate() + ' ' + pad2(eta.getHours()) + ':' + pad2(eta.getMinutes()) + '</span></div>' +
-            '<div class="wx-item"><span class="wx-label">気温</span><span class="wx-value">' + temp.toFixed(1) + '℃</span></div>' +
-            '<div class="wx-item"><span class="wx-label">風</span><span class="wx-value">' + bearingToCompass(wd) + ' ' + ws.toFixed(1) + 'm/s</span></div>' +
-            '<div class="wx-item"><span class="wx-label">降水量</span><span class="wx-value' + (rain > 0 ? ' rain-warn' : '') + '">' + rain.toFixed(1) + 'mm/h</span></div>' +
+        body.innerHTML =
+          '<div class="wx-weather-card">' +
+            '<div class="wx-wind-arrow ' + rel + '"><span class="arrow-icon">' + info.icon + '</span>' +
+            '<span class="arrow-label">' + info.label + '</span></div>' +
+            '<div class="wx-details">' +
+              '<div class="wx-item"><span class="wx-label">ETA</span><span class="wx-value">' + fmtDateTime(eta) + '</span></div>' +
+              '<div class="wx-item"><span class="wx-label">気温</span><span class="wx-value">' + temp.toFixed(1) + '℃</span></div>' +
+              '<div class="wx-item"><span class="wx-label">風</span><span class="wx-value">' + bearingToCompass(wd) + ' ' + ws.toFixed(1) + 'm/s</span></div>' +
+              '<div class="wx-item"><span class="wx-label">降水量</span><span class="wx-value' + (rain > 0 ? ' rain-warn' : '') + '">' + rain.toFixed(1) + 'mm/h</span></div>' +
+            '</div>' +
           '</div>';
-        var l = panel.querySelector('.wx-loading');
-        if (l) l.replaceWith(card);
-      }).catch(function () {
-        var l = panel.querySelector('.wx-loading');
-        if (l) l.outerHTML = '<div class="wx-error">天気の取得に失敗しました（通信環境をご確認ください）</div>';
+      }).catch(function (e) {
+        body.innerHTML =
+          '<div class="wx-error">天気を取得できませんでした' +
+            '<span class="wx-sub">' + esc(netHint(e)) + '<br>接続先：api.open-meteo.com</span></div>' +
+          '<div style="text-align:center;margin-bottom:10px;"><button class="wx-retry">再試行</button></div>';
+        body.querySelector('.wx-retry').addEventListener('click', function () {
+          loadWeather(panel, lat, lon, brg, dist);
+        });
       });
     }
 
