@@ -100,10 +100,11 @@
         directionText: U.normalizeText(cell('direction')),
         road: U.normalizeText(cell('road')),
         landmark: U.normalizeText(cell('landmark')),
+        sign: U.normalizeText(cell('sign')),
         signal: parseSignal(cell('signal')),
         note: U.normalizeText(cell('note'))
       };
-      var hasText = rec.name || rec.road || rec.landmark || rec.note || rec.directionText;
+      var hasText = rec.name || rec.road || rec.landmark || rec.note || rec.directionText || rec.sign;
       if (rec.dist === null && !hasText) continue;      // 空行
       if (rec.dist === null && !rec.openRaw && !rec.closeRaw && !rec.name) continue;
       rec.kind = X.detectKind(rec.kindText, rec.name);
@@ -111,6 +112,19 @@
       if (!rec.kind && map.kind === undefined && rec.directionText && !rec.direction) {
         rec.kind = X.detectKind(rec.directionText, '');
       }
+      // 地点名の列が無く、道標欄などにCP名が書かれている書式に対応（行全体から拾う）
+      if (!rec.kind) {
+        var hit = X.findCpCell(row);
+        if (hit) {
+          rec.kind = X.detectKind(hit.marker, '');
+          rec.cpMarker = hit.marker;
+          rec.cpCol = hit.col;
+          if (!rec.name) rec.name = hit.name || hit.text;
+          if (rec.sign === hit.text) rec.sign = '';     // 道標欄がCP名だったので道標としては出さない
+        }
+      }
+      // Open/Closeが両方入っている行は、種別が読めなくてもCPとして扱う
+      if (!rec.kind && rec.openRaw && rec.closeRaw) rec.kind = 'pc';
       out.push(rec);
     }
     // 区間距離しか無いシートは積算を復元する
@@ -247,7 +261,7 @@
       if (i === 0 && r.dist <= 0.2) kind = 'start';
       return {
         kind: kind,
-        label: X.extractLabel(kind, (r.kindText || '') + ' ' + r.name, counters),
+        label: X.extractLabel(kind, (r.cpMarker || '') + ' ' + (r.kindText || '') + ' ' + r.name, counters),
         name: r.name,
         distKm: r.dist,
         note: r.note,
@@ -309,6 +323,7 @@
         direction: r.direction || 'straight',
         directionText: r.directionText,
         road: r.road,
+        sign: r.sign,
         landmark: r.landmark,
         signal: r.signal,
         note: r.note,

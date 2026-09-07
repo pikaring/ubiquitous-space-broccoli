@@ -354,6 +354,48 @@ check('CPの距離も積算になる',
   cpKm.length === 6 && cpKm[0] === 0 && cpKm[5] > 200, cpKm.join(' / '));
 await page3.close();
 
+/* ============ シナリオ4：2行見出し＋道標欄にCP名（実際の主催者Excelの型） ============ */
+const page4 = await browser.newPage({ viewport: { width: 430, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
+page4.on('pageerror', e => errors.push('pageerror(merged): ' + e.message));
+page4.on('console', m => {
+  if (m.type() === 'error' && !isNetError(m.text())) errors.push('console(merged): ' + m.text());
+});
+await page4.route('**cyberjapandata.gsi.go.jp/**', route => route.abort());
+await page4.route('**/api.open-meteo.com/**', route => route.abort());
+await page4.goto(base, { waitUntil: 'load' });
+await page4.setInputFiles('#file-gpx', path.join(root, 'samples/demo.gpx'));
+await page4.setInputFiles('#file-xlsx', path.join(root, 'samples/demo-merged-header.xlsx'));
+await page4.waitForSelector('#step2:not(.hidden)');
+
+const map4 = await page4.$$eval('#sheets select[data-col]', els =>
+  Object.fromEntries(els.map(e => [e.dataset.col, e.value])));
+check('2行見出しから積算距離の列を見つける', map4.dist === '4' && map4.segDist === '3', JSON.stringify(map4));
+check('道標の列を見分ける', map4.sign === '8' && map4.road === '2', `sign=${map4.sign} road=${map4.road}`);
+const colLabel = await page4.$eval('#sheets select[data-col="dist"] option[value="4"]', e => e.textContent);
+check('列の選択肢に小見出しを連結して見せる', /積算/.test(colLabel), colLabel);
+
+await page4.fill('#opt-date', '2026-10-10');
+await page4.selectOption('#opt-embed-map', 'none');
+await page4.click('#btn-generate');
+await page4.waitForSelector('#step4:not(.hidden)', { timeout: 60000 });
+const warn4 = await page4.isHidden('#gen-error') ? '' : await page4.textContent('#gen-error');
+check('ExcelのCPを使うのでGPX代替もACP推定も起きない',
+  !/ウェイポイント/.test(warn4) && !/ACP基準/.test(warn4), warn4.replace(/\n/g, ' ').slice(0, 80) || '警告なし');
+
+const f4 = page4.frameLocator('#preview');
+await f4.locator('#cp-list .cp-item').first().waitFor();
+const cpTitles = await f4.locator('#cp-list .cp-title').allTextContents();
+check('道標欄のCP名からラベルと店名を取り出す',
+  cpTitles.length === 6 && /PC1[\s　]*デモマート東町店/.test(cpTitles[1]), cpTitles.join(' / '));
+const closes = await f4.locator('#cp-list .chip-close').allTextContents();
+check('主催者のOpen/Closeをそのまま使う',
+  closes.length === 6 && /18:30/.test(closes[0]) && /翌/.test(closes[5]), closes.map(t => t.replace(/\s/g, '')).join(' / '));
+
+await f4.locator('nav button[data-view="detail"]').click();
+const signText = await f4.locator('#cue-list .turn-landmark').first().textContent();
+check('道標を「道標「…」」として表示する', /道標「/.test(signText), signText.trim());
+await page4.close();
+
 check('JSエラーが発生しない', errors.length === 0, errors.join(' | '));
 
 await browser.close();

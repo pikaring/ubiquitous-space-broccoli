@@ -176,5 +176,38 @@ fs.writeFileSync(path.join(root, 'samples/demo-segment.xlsx'),
   XLSX.write(wb2, { type: 'buffer', bookType: 'xlsx' }));
 console.log(`区間距離版: ${segRows.length - 1}行 / 合計 ${prevKmSeg.toFixed(1)} km`);
 
+/* ---- 見出しが2行に分かれ、CP名が道標欄にある形式（実際の主催者Excelの型） ---- */
+const dayOf = min => 10 + Math.floor((START_MIN + min) / 1440);          // 開催日=10日
+const hhmm = min => {
+  const t = (START_MIN + min) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+};
+const mhRows = [
+  [null, null, 'デモBRM1010サンプル200km', null, null, null, null, null, '2026年 10/10(土) 18:00スタート'],
+  [' ', 'No.', '地点までの道路番号      ', '地点までの', null, '交差', '信号', '進路', '道標(青看板)の方向', 'ランドマーク・備考', 'open', 'close'],
+  [' ', null, ' (R = 国道 ・ r =道道)', '区間', '積算', null, null, null, null, null, null, null]
+];
+let mhPrev = 0, mhNo = 0;
+merged.forEach(row => {
+  const km = row.type === 'turn' ? row.km : row.c.km;
+  const seg = Math.round((km - mhPrev) * 10) / 10;
+  mhPrev = km;
+  if (row.type === 'turn') {
+    mhRows.push([null, ++mhNo, row.t.road, seg, km, '┼', row.t.signal === '有' ? '〇' : '×',
+      row.t.dir, row.t.landmark, '', null, null]);
+  } else {
+    const c = row.c;
+    // 先頭のStartだけExcelシリアル値、以降は「10日 18:48」形式（実物と同じ混在）
+    const o = c.at === 0 ? (START_MIN + c.openMin) / 1440 : `${dayOf(c.openMin)}日 ${hhmm(c.openMin)}`;
+    const cl = c.at === 0 ? (START_MIN + c.closeMin) / 1440 : `${dayOf(c.closeMin)}日 ${hhmm(c.closeMin)}`;
+    mhRows.push([null, ++mhNo, '', seg, km, '', '', '左側', `${c.kind} ${c.name}`, c.note, o, cl]);
+  }
+});
+const wb3 = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb3, XLSX.utils.aoa_to_sheet(mhRows), 'BRM1010デモ200km');
+fs.writeFileSync(path.join(root, 'samples/demo-merged-header.xlsx'),
+  XLSX.write(wb3, { type: 'buffer', bookType: 'xlsx' }));
+console.log(`2行見出し版: ${mhRows.length - 3}行`);
+
 console.log(`GPX  : ${pts.length} trkpts / ${gpxTotalKm.toFixed(2)} km / wpt ${cps.filter(c=>c.kind!=='Start'&&c.kind!=='Goal').length}`);
 console.log(`Excel: 簡易 ${cps.length} CP / 詳細 ${detailRows.length - 1} 行 / 総距離 ${totalKm} km`);
