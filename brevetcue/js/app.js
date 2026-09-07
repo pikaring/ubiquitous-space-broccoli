@@ -255,7 +255,9 @@
       acpFallback: $('opt-acp').checked,
       timeLimitMin: parseFloat($('opt-limit').value) ? Math.round(parseFloat($('opt-limit').value) * 60) : null,
       autoTurns: $('opt-autoturns').checked,
-      turnOpts: { minAngle: parseInt($('opt-angle').value, 10) || 50 }
+      turnOpts: { minAngle: parseInt($('opt-angle').value, 10) || 50 },
+      embedWx: $('opt-embed-wx').checked,
+      embedMap: $('opt-embed-map').value
     };
     try {
       var model = NS.match.buildCourse(state.track, state.sheets, opt);
@@ -268,20 +270,88 @@
       if (model.meta.cpFromGpx) notes.push('ExcelのCPが無いため、GPXのウェイポイントと始終点からCPを構成しました。');
       if (model.meta.acpTimes) notes.push('Open/CloseはACP基準で補完した地点があります（主催者の公式時刻で必ず確認してください）。');
       if (model.meta.autoTurns) notes.push('曲がり角はGPXの方位変化から自動抽出しました（道路名・ランドマークは入りません）。');
-      if (notes.length) {
-        $('gen-error').textContent = '⚠️ ' + notes.join('\n⚠️ ');
-        $('gen-error').classList.add('warn');
-        show('gen-error', true);
-      }
       state.model = model;
-      state.html = NS.template.buildHtml(model);
-      renderOutput();
-      show('step4', true);
-      $('step4').scrollIntoView({ behavior: 'smooth' });
+
+      // オフライン用の焼き込み（天気・地図）→ 完了後にHTMLを組み立てる
+      $('btn-generate').disabled = true;
+      buildOffline(model, opt, notes).then(function () {
+        state.html = NS.template.buildHtml(model);
+        renderOutput();
+        show('gen-progress', false);
+        $('btn-generate').disabled = false;
+        if (notes.length) {
+          $('gen-error').textContent = '⚠️ ' + notes.join('\n⚠️ ');
+          $('gen-error').classList.add('warn');
+          show('gen-error', true);
+        }
+        show('step4', true);
+        $('step4').scrollIntoView({ behavior: 'smooth' });
+      }).catch(function (err) {
+        $('btn-generate').disabled = false;
+        show('gen-progress', false);
+        showError('生成中にエラーが発生しました：' + err.message);
+        if (window.console) console.error(err);
+      });
     } catch (err) {
       showError('生成中にエラーが発生しました：' + err.message);
       if (window.console) console.error(err);
     }
+  }
+
+  /* ---- オフライン用の焼き込み ---- */
+  function progress(msg) {
+    $('gen-progress').textContent = msg;
+    show('gen-progress', true);
+  }
+
+  function buildOffline(model, opt, notes) {
+    var offline = {};
+    var jobs = [];
+
+    if (opt.embedWx) {
+      progress('天気予報を取得しています…');
+      var pts = NS.offline.sampleWeatherPoints(model.cues, 20);
+      var goal = model.cps[model.cps.length - 1];
+      var span = (goal && goal.closeMin) || Math.round(model.meta.totalKm / 12 * 60);
+      jobs.push(
+        NS.offline.fetchWeather(pts, opt.startDate, span).then(function (wx) {
+          if (wx) offline.wx = wx;
+          else notes.push('開催日が予報範囲（今日〜16日後）の外なので、天気は埋め込みませんでした。開催が近づいてから生成し直すと埋め込めます。');
+        }).catch(function (e) {
+          notes.push('天気の埋め込みに失敗しました（' + e.message + '）。閲覧時に通信できる環境なら、その場で取得されます。');
+        })
+      );
+    }
+
+    if (opt.embedMap && opt.embedMap !== 'none') {
+      var targets = model.cues.map(function (c, i) {
+        return { id: 'q' + i, lat: c.lat, lon: c.lon, kind: c.kind };
+      }).filter(function (t) {
+        return t.lat != null && (opt.embedMap === 'all' || t.kind !== 'turn');
+      });
+      var plan = NS.offline.planTiles(targets, 16);
+      if (plan.outside) notes.push('日本国外の' + plan.outside + '地点は地図を埋め込めませんでした（地理院タイルの範囲外）。');
+      if (plan.keys.length) {
+        progress('地図タイルを取得しています… 0/' + plan.keys.length);
+        jobs.push(
+          NS.offline.fetchTiles(plan.keys, function (done, total) {
+            progress('地図タイルを取得しています… ' + done + '/' + total);
+          }).then(function (res) {
+            offline.map = {
+              w: NS.offline.MAP_W, h: NS.offline.MAP_H, attr: NS.offline.TILE_ATTR,
+              layout: plan.layout, tiles: res.tiles
+            };
+            if (res.failed) notes.push('地図タイル ' + res.failed + '枚を取得できませんでした（その部分は空欄になります）。');
+          })
+        );
+      }
+    }
+
+    if (!jobs.length) return Promise.resolve();
+    return Promise.all(jobs).then(function () {
+      model.offline = offline;
+      progress('HTMLを組み立てています…');
+    });
   }
 
   function renderOutput() {
@@ -289,8 +359,15 @@
     if (state.blobUrl) URL.revokeObjectURL(state.blobUrl);
     state.blobUrl = URL.createObjectURL(blob);
     $('preview').src = state.blobUrl;
-    $('filesize').textContent = '生成サイズ ' + (blob.size / 1024).toFixed(0) + ' KB / ' +
-      state.model.cps.length + 'CP・' + state.model.cues.length + '行';
+    var off = state.model.offline || {};
+    var extra = [];
+    if (off.wx) extra.push('天気' + off.wx.points.length + '地点×' + off.wx.time.length + '時間を埋め込み');
+    if (off.map) extra.push('地図' + Object.keys(off.map.tiles).length + 'タイルを埋め込み');
+    var size = blob.size >= 1048576 ? (blob.size / 1048576).toFixed(1) + ' MB' : (blob.size / 1024).toFixed(0) + ' KB';
+    $('filesize').textContent = '生成サイズ ' + size + ' / ' +
+      state.model.cps.length + 'CP・' + state.model.cues.length + '行' +
+      (extra.length ? ' / ' + extra.join('・') : '');
+    show('size-warn', blob.size > 4 * 1048576);
 
     var rows = state.model.report.map(function (r) {
       return '<tr><td>' + U.escapeHtml(r.kind) + '</td><td>' + U.escapeHtml(r.label) + '</td>' +

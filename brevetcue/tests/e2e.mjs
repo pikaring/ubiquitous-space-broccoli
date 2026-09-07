@@ -49,6 +49,39 @@ page.on('console', m => {
   if (m.type() === 'error' && !(allowNetErrors && isNetError(m.text()))) errors.push('console: ' + m.text());
 });
 
+/* 外部サービスをスタブする（この環境はブラウザから外に出られないため） */
+const PNG_1x1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64');
+await page.route('**cyberjapandata.gsi.go.jp/**', route =>
+  route.fulfill({ status: 200, contentType: 'image/png', body: PNG_1x1 }));
+
+const hoursBetween = (from, to) => {
+  const out = [];
+  for (let d = new Date(from); d <= new Date(to + 'T23:00'); d = new Date(d.getTime() + 3600000)) {
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:00`);
+  }
+  return out;
+};
+const seriesFor = times => ({
+  time: times,
+  temperature_2m: times.map(() => 12.3),
+  precipitation: times.map(() => 0.4),
+  windspeed_10m: times.map(() => 5.6),
+  winddirection_10m: times.map(() => 90)      // 東風
+});
+await page.route('**/api.open-meteo.com/**', route => {
+  const u = new URL(route.request().url());
+  const lats = (u.searchParams.get('latitude') || '').split(',');
+  const times = u.searchParams.get('start_date')
+    ? hoursBetween(u.searchParams.get('start_date') + 'T00:00', u.searchParams.get('end_date'))
+    : hoursBetween(new Date().toISOString().slice(0, 10) + 'T00:00',
+                   new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10));
+  const one = i => ({ latitude: +lats[i], longitude: 0, hourly: seriesFor(times) });
+  const body = lats.length > 1 ? lats.map((_, i) => one(i)) : one(0);
+  route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+});
+
 await page.goto(base, { waitUntil: 'load' });
 
 /* --- STEP1: ファイル読み込み --- */
@@ -73,13 +106,19 @@ const timeVal = await page.inputValue('#opt-time');
 check('大会名・出走日時を推測できる', /デモBRM1010/.test(title) && dateVal.endsWith('-10-10') && timeVal === '18:00',
   `${title} / ${dateVal} ${timeVal}`);
 
-/* --- STEP3: 生成 --- */
+/* --- STEP3: 生成（開催日を予報範囲内にして埋め込みも走らせる） --- */
+const rideDay = new Date(Date.now() + 2 * 86400000);
+const rideYmd = `${rideDay.getFullYear()}-${String(rideDay.getMonth() + 1).padStart(2, '0')}-${String(rideDay.getDate()).padStart(2, '0')}`;
+await page.fill('#opt-date', rideYmd);
 await page.click('#btn-generate');
 await page.waitForSelector('#step4:not(.hidden)');
 check('生成でエラーが出ない', await page.isHidden('#gen-error'));
 
 const frame = page.frameLocator('#preview');
 await frame.locator('#cp-list .cp-item').first().waitFor();
+
+const sizeText = await page.textContent('#filesize');
+check('天気と地図を埋め込む', /天気\d+地点/.test(sizeText) && /地図\d+タイル/.test(sizeText), sizeText);
 
 const cpCount = await frame.locator('#cp-list .cp-item').count();
 check('簡易版に6CPが並ぶ', cpCount === 6, `${cpCount}件`);
@@ -129,54 +168,37 @@ check('道路名がExcelから取り込まれる', /→/.test(roadText), roadTex
 const cpRowsInDetail = await frame.locator('#cue-list .cp-row').count();
 check('詳細版にもCP行が重複なく入る', cpRowsInDetail === 6, `${cpRowsInDetail}行`);
 
-/* 天気・地図パネル：Open-Meteoの応答をスタブして描画を検証する */
-const day = new Date(Date.now() + 2 * 86400000);
-const ymd = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-const hours = Array.from({ length: 24 }, (_, h) => `${ymd}T${String(h).padStart(2, '0')}:00`);
-const canned = {
-  hourly: {
-    time: hours,
-    temperature_2m: hours.map(() => 12.3),
-    precipitation: hours.map(() => 0.4),
-    windspeed_10m: hours.map(() => 5.6),
-    winddirection_10m: hours.map(() => 90)   // 東風
-  }
-};
-await page.route('**/api.open-meteo.com/**', route =>
-  route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(canned) }));
+/* 天気・地図パネル（閲覧時に通信できる場合）
+   曲がり角は地図を埋め込んでいない（既定はCPのみ）ので、埋め込み地図が使われるCPと動作が分かれる */
 await page.route('**/openstreetmap.org/**', route =>
   route.fulfill({ status: 200, contentType: 'text/html', body: '<p>map stub</p>' }));
 
-// 予報範囲内の日付にする
-await frame.locator('#start-date').fill(ymd);
-await frame.locator('#start-date').dispatchEvent('change');
-await frame.locator('#cue-list .wx-toggle-btn').first().click();
-await frame.locator('#cue-list .wx-panel.open iframe').first().waitFor({ state: 'attached' });
-const mapSrc = await frame.locator('#cue-list .wx-panel.open iframe').first().getAttribute('src');
-check('地図パネルが該当座標で開く', /openstreetmap\.org\/export\/embed/.test(mapSrc) && /marker=42\./.test(mapSrc));
+const turnBtns = frame.locator('#cue-list .turn-row .wx-toggle-btn');
+await turnBtns.first().click();
+const turnPanel = frame.locator('#cue-list .turn-row .wx-panel.open').first();
+await turnPanel.locator('iframe').waitFor({ state: 'attached' });
+const mapSrc = await turnPanel.locator('iframe').getAttribute('src');
+check('地図パネルが該当座標で開く', /openstreetmap\.org\/export\/embed/.test(mapSrc) && /marker=4[23]\./.test(mapSrc));
 
-await frame.locator('#cue-list .wx-weather-card').first().waitFor({ timeout: 15000 });
-const wxText = (await frame.locator('#cue-list .wx-weather-card').first().innerText()).replace(/\n+/g, ' ');
+await turnPanel.locator('.wx-weather-card').waitFor({ timeout: 15000 });
+const wxText = (await turnPanel.locator('.wx-weather-card').innerText()).replace(/\n+/g, ' ');
 check('天気カードに気温・風・降水量が出る',
   /12\.3℃/.test(wxText) && /5\.6m\/s/.test(wxText) && /0\.4mm/.test(wxText) && /東/.test(wxText), wxText);
-check('進行方位と風向から向かい風／追い風を判定する',
-  /向かい風|追い風|横風/.test(wxText), wxText.split(' ')[0]);
+check('進行方位と風向から向かい風／追い風を判定する', /向かい風|追い風|横風/.test(wxText), wxText.split(' ')[0]);
 
-/* 通信できない場合：理由と再試行ボタンが出る */
+/* 通信できないときは、埋め込んだ予報に切り替わる */
 allowNetErrors = true;
 await page.unroute('**/api.open-meteo.com/**');
 await page.route('**/api.open-meteo.com/**', route => route.abort());
-await frame.locator('#cue-list .wx-toggle-btn').nth(25).click();
-const errPanel = frame.locator('#cue-list .wx-panel.open').nth(1);
-await errPanel.locator('.wx-error').waitFor({ timeout: 20000 });
-const errText = (await errPanel.locator('.wx-error').innerText()).replace(/\n+/g, ' ');
-check('取得失敗時に理由と接続先を表示する',
-  /取得できませんでした/.test(errText) && /api\.open-meteo\.com/.test(errText), errText);
-check('再試行ボタンが出る', await errPanel.locator('.wx-retry').count() === 1);
+await turnBtns.nth(20).click();
+const fbPanel = frame.locator('#cue-list .turn-row .wx-panel.open').nth(1);
+await fbPanel.locator('.wx-weather-card').waitFor({ timeout: 20000 });
+check('通信できないときは埋め込み予報に切り替わる',
+  /埋め込み分を表示/.test(await fbPanel.locator('.wx-stamp').innerText()),
+  await fbPanel.locator('.wx-stamp').innerText());
 
 /* 地図アプリへのリンク（iOSで埋め込み地図が出せないときの逃げ道） */
-const mapLinks = await frame.locator('#cue-list .wx-panel.open .wx-map-links a').first()
-  .locator('xpath=../a').allTextContents();
+const mapLinks = await turnPanel.locator('.wx-map-links a').allTextContents();
 check('地図アプリへのリンクを並べる',
   mapLinks.length === 3 && /OpenStreetMap/.test(mapLinks[0]) && /Apple/.test(mapLinks[1]) && /Google/.test(mapLinks[2]),
   mapLinks.join(' / '));
@@ -184,14 +206,26 @@ check('地図アプリへのリンクを並べる',
 /* iOSのChrome/Edgeがローカルファイルを開く内部スキーム（edge://external-file）を再現 */
 const outFrame = page.frames().find(f => f !== page.mainFrame());
 await outFrame.evaluate(() => { window.__CUE_SCHEME__ = 'app'; });
-await frame.locator('#cue-list .wx-toggle-btn').nth(30).click();
-const appPanel = frame.locator('#cue-list .wx-panel.open').nth(2);
+await turnBtns.nth(30).click();
+const appPanel = frame.locator('#cue-list .turn-row .wx-panel.open').nth(2);
 await appPanel.locator('.wx-net-note').waitFor({ timeout: 5000 });
 const appText = (await appPanel.locator('.wx-net-note').innerText()).replace(/\n+/g, ' ');
-check('内部スキームでは待たずに理由を出す',
-  /端末内のファイル/.test(appText) && /オンラインのURLから開くと表示されます/.test(appText), appText.slice(0, 70) + '…');
+check('内部スキームでは待たずに理由を出す（地図を埋め込まなかった地点）',
+  /端末内のファイル/.test(appText) && /オンラインのURLから開くと表示されます/.test(appText), appText.slice(0, 60) + '…');
 check('内部スキームでは空の地図枠を出さない',
   await appPanel.locator('iframe').count() === 0 && await appPanel.locator('.wx-map-links a').count() === 3);
+
+/* iPhoneのローカルファイル状態でも、埋め込んだ地図と天気は表示できる */
+await frame.locator('#cue-list .cp-row .wx-toggle-btn').nth(1).click();
+const cpPanel = frame.locator('#cue-list .cp-row .wx-panel.open').first();
+await cpPanel.locator('.wx-static-map').waitFor({ timeout: 5000 });
+check('通信なしで埋め込み地図を表示する',
+  await cpPanel.locator('.wx-static-map img').count() > 0 &&
+  /地理院タイル/.test(await cpPanel.locator('.wx-attr').innerText()),
+  (await cpPanel.locator('.wx-static-map img').count()) + 'タイル / ' + await cpPanel.locator('.wx-attr').innerText());
+const embWx = (await cpPanel.locator('.wx-weather-card').innerText()).replace(/\n+/g, ' ');
+check('通信なしで埋め込み天気を表示する',
+  /12\.3℃/.test(embWx) && /5\.6m\/s/.test(embWx) && /埋め込み予報/.test(await cpPanel.locator('.wx-stamp').innerText()), embWx);
 await outFrame.evaluate(() => { delete window.__CUE_SCHEME__; });
 
 /* マッチング精度レポート */
@@ -232,8 +266,10 @@ await page2.goto(base, { waitUntil: 'load' });
 await page2.setInputFiles('#file-gpx', path.join(root, 'samples/demo.gpx'));
 await page2.fill('#opt-date', '2026-10-10');
 await page2.fill('#opt-time', '18:00');
+await page2.route('**/api.open-meteo.com/**', route => route.abort());
+await page2.route('**cyberjapandata.gsi.go.jp/**', route => route.abort());
 await page2.click('#btn-generate');
-await page2.waitForSelector('#step4:not(.hidden)');
+await page2.waitForSelector('#step4:not(.hidden)', { timeout: 60000 });
 const warn = await page2.textContent('#gen-error');
 check('GPXのみでも生成でき、補完内容が警告される',
   /ウェイポイント/.test(warn) && /ACP基準/.test(warn) && /自動抽出/.test(warn), warn.replace(/\n/g, ' / '));
@@ -246,6 +282,17 @@ check('ACP基準のCloseが入る', /Close(翌)?\d{2}:\d{2}/.test(close2.replace
 await f2.locator('nav button[data-view="detail"]').click();
 const autoTurns = await f2.locator('#cue-list .turn-arrow').count();
 check('GPXから曲がり角を自動抽出する', autoTurns >= 40 && autoTurns <= 70, `${autoTurns}個`);
+/* 埋め込みが無い状態で通信できないと、理由と再試行ボタンが出る */
+await f2.locator('#start-date').fill(rideYmd);          // 予報範囲内にして取得を試みさせる
+await f2.locator('#start-date').dispatchEvent('change');
+await f2.locator('#cue-list .turn-row .wx-toggle-btn').first().click();
+const errPanel = f2.locator('#cue-list .turn-row .wx-panel.open').first();
+await errPanel.locator('.wx-error').waitFor({ timeout: 20000 });
+const errText = (await errPanel.locator('.wx-error').innerText()).replace(/\n+/g, ' ');
+check('取得失敗時に理由と接続先を表示する',
+  /取得できませんでした/.test(errText) && /api\.open-meteo\.com/.test(errText), errText);
+check('再試行ボタンが出る', await errPanel.locator('.wx-retry').count() === 1);
+
 await page2.close();
 
 check('JSエラーが発生しない', errors.length === 0, errors.join(' | '));

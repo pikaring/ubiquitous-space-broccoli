@@ -87,11 +87,24 @@
       <label>自動抽出の角度しきい値（度）
         <input type="number" id="opt-angle" value="50" min="20" max="120" step="5">
       </label>
+      <label class="check-label">
+        <input type="checkbox" id="opt-embed-wx" checked>
+        天気予報を埋め込む（生成時点の予報。オフラインでも表示できる）
+      </label>
+      <label>地図画像の埋め込み（地理院タイル）
+        <select id="opt-embed-map">
+          <option value="cp">CPのみ（推奨）</option>
+          <option value="all">全地点（ファイルが大きくなります）</option>
+          <option value="none">埋め込まない</option>
+        </select>
+      </label>
     </div>
     <p class="note" id="autoturn-note">※自動抽出は「進路とアイコンのみ」の簡易な詳細版になります（道路名・ランドマークはExcelの記述が必要です）。</p>
+    <p class="note">※iPhoneのChrome／Edgeで端末内のファイルを開くと外部通信ができません。天気・地図を埋め込んでおくと、その状態でも表示できます（開催16日前から埋め込み可）。</p>
     <div class="row-actions">
       <button class="btn primary" id="btn-generate">キューシートを生成する</button>
     </div>
+    <div id="gen-progress" class="progress hidden"></div>
     <div id="gen-error" class="error hidden"></div>
   </section>
 
@@ -102,6 +115,8 @@
       <button class="btn primary" id="btn-download">⬇ HTMLをダウンロード</button>
       <button class="btn ghost" id="btn-open">別タブで開く</button>
       <span class="filesize" id="filesize"></span>
+    </div>
+    <div class="note hidden" id="size-warn">⚠️ ファイルが大きめです。iPhoneでの読み込みに時間がかかる場合は、地図の埋め込みを「CPのみ」にすると小さくできます。
     </div>
     <div class="preview-frame"><iframe id="preview" title="プレビュー"></iframe></div>
     <details class="report" id="report-box">
@@ -121,6 +136,7 @@
 <script src="js/turns.js"></script>
 <script src="js/xlsx-import.js"></script>
 <script src="js/match.js"></script>
+<script src="js/offline.js"></script>
 <script src="js/template.js"></script>
 <script src="js/app.js"></script>
 </body>
