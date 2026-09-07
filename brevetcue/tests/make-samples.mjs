@@ -156,5 +156,25 @@ XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailRows), '詳細キ
 const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 fs.writeFileSync(path.join(root, 'samples/demo.xlsx'), buf);
 
+/* ---- 区間距離しか載っていない形式（主催者によくある）のサンプル ----
+   1シートに曲がり角とCPが混在し、見出しは「距離(km)」だけ。積算は無い。 */
+const segRows = [['No.', '進路', '距離(km)', '道路名', 'ランドマーク', '信号', '備考']];
+let prevKmSeg = 0, segNo = 0;
+merged.forEach(row => {
+  const km = row.type === 'turn' ? row.km : row.c.km;
+  const seg = Math.round((km - prevKmSeg) * 10) / 10;
+  prevKmSeg = km;
+  if (row.type === 'turn') {
+    segRows.push([++segNo, row.t.dir, seg, row.t.road, row.t.landmark, row.t.signal, '']);
+  } else {
+    segRows.push(['', row.c.kind, seg, row.c.name, '', '', row.c.note]);
+  }
+});
+const wb2 = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb2, XLSX.utils.aoa_to_sheet(segRows), 'キューシート');
+fs.writeFileSync(path.join(root, 'samples/demo-segment.xlsx'),
+  XLSX.write(wb2, { type: 'buffer', bookType: 'xlsx' }));
+console.log(`区間距離版: ${segRows.length - 1}行 / 合計 ${prevKmSeg.toFixed(1)} km`);
+
 console.log(`GPX  : ${pts.length} trkpts / ${gpxTotalKm.toFixed(2)} km / wpt ${cps.filter(c=>c.kind!=='Start'&&c.kind!=='Goal').length}`);
 console.log(`Excel: 簡易 ${cps.length} CP / 詳細 ${detailRows.length - 1} 行 / 総距離 ${totalKm} km`);

@@ -266,7 +266,7 @@
           'STEP2で「地点名」「積算距離」の列が正しく割り当てられているか確認してください。');
         return;
       }
-      var notes = [];
+      var notes = (model.notices || []).slice();
       if (model.meta.cpFromGpx) notes.push('ExcelのCPが無いため、GPXのウェイポイントと始終点からCPを構成しました。');
       if (model.meta.acpTimes) notes.push('Open/CloseはACP基準で補完した地点があります（主催者の公式時刻で必ず確認してください）。');
       if (model.meta.autoTurns) notes.push('曲がり角はGPXの方位変化から自動抽出しました（道路名・ランドマークは入りません）。');
