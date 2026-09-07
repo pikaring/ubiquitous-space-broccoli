@@ -238,5 +238,59 @@ fs.writeFileSync(path.join(root, 'samples/demo-arrow-notes.xlsx'),
   XLSX.write(wb4, { type: 'buffer', bookType: 'xlsx' }));
 console.log(`矢印＋文中時刻版: ${arRows.length - 2}行`);
 
+/* ---- 英語見出し＋ADD列（見出しからは積算と判別できない）＋古い日付のシリアル値 ---- */
+const enRows = [
+  ['ver', '日付', null, '開催日', 200, 'デモ200', null, 0.25],
+  ['CUE', 'PC', 'TRIP', 'PC～', 'ADD', 'POINT NAME', 'CR', 'DIR', 'SIG', 'RT', 'Guide', '参考\r\nOPEN', '参考\r\nCLOSE'],
+  [null, null, null, null, null, '（「」内は信号名）']
+];
+const DIRJ = { '右折': '右', '左折': '左', '直進': '直進' };
+let enNo = 0, enPrev = 0, enPc = 0;
+merged.forEach(row => {
+  const km = row.type === 'turn' ? row.km : row.c.km;
+  const seg = Math.round((km - enPrev) * 10) / 10; enPrev = km;
+  if (row.type === 'turn') {
+    enRows.push([++enNo, null, seg, seg, km, row.t.landmark || null, '┫', DIRJ[row.t.dir],
+      row.t.signal === '有' ? '〇' : null, row.t.road, '', null, null]);
+  } else {
+    const c = row.c;
+    const label = c.kind === 'Start' ? 'Start' : (c.kind === 'Goal' ? 'Finish' : 'PC' + (++enPc));
+    // 2022年のテンプレート日付が残っているシリアル値（時刻だけ使えることの確認）
+    enRows.push([++enNo, label, 0, seg, km, c.name, null, null, null, '市道', c.note,
+      44703 + (START_MIN + c.openMin) / 1440, 44703 + (START_MIN + c.closeMin) / 1440]);
+  }
+});
+const wb5 = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb5, XLSX.utils.aoa_to_sheet(enRows), '公開用');
+fs.writeFileSync(path.join(root, 'samples/demo-english-add.xlsx'),
+  XLSX.write(wb5, { type: 'buffer', bookType: 'xlsx' }));
+console.log(`英語見出し版: ${enRows.length - 3}行`);
+
+/* ---- Audax標準型：通過点／合計、時刻は「6:00～6:30」の範囲表記、Control表記 ---- */
+const axRows = [
+  ['デモBRM1010サンプル200km'],
+  ['・S＝信号、「 」=信号名、ルートは次の通過点までの道路番号'],
+  [null, '通過点　', '進路', 'ルート', '区間', '合計', '情報・その他　[ ]行先道標']
+];
+let axNo = 0, axPrev = 0, axC = 0;
+merged.forEach(row => {
+  const km = row.type === 'turn' ? row.km : row.c.km;
+  const seg = Math.round((km - axPrev) * 10) / 10; axPrev = km;
+  if (row.type === 'turn') {
+    axRows.push([++axNo, (row.t.signal === '有' ? 'S' : '') + '「' + (row.t.landmark || '交差点') + '」',
+      row.t.dir, row.t.road, seg, km, '[' + (row.t.landmark || '直進') + ']']);
+  } else {
+    const c = row.c;
+    const label = c.kind === 'Start' ? 'スタート' : (c.kind === 'Goal' ? 'ゴール' : 'Control' + (++axC));
+    axRows.push([++axNo, label + '　' + c.name, '直進', '市道', seg, km,
+      `${hhmm(c.openMin)}～${hhmm(c.closeMin)}　${c.note}`]);
+  }
+});
+const wb6 = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb6, XLSX.utils.aoa_to_sheet(axRows), 'Sheet1');
+fs.writeFileSync(path.join(root, 'samples/demo-audax-range.xlsx'),
+  XLSX.write(wb6, { type: 'buffer', bookType: 'xlsx' }));
+console.log(`Audax標準型: ${axRows.length - 3}行`);
+
 console.log(`GPX  : ${pts.length} trkpts / ${gpxTotalKm.toFixed(2)} km / wpt ${cps.filter(c=>c.kind!=='Start'&&c.kind!=='Goal').length}`);
 console.log(`Excel: 簡易 ${cps.length} CP / 詳細 ${detailRows.length - 1} 行 / 総距離 ${totalKm} km`);

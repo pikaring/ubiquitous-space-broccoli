@@ -46,6 +46,7 @@
       state.track.totalKm.toFixed(1) + 'km）';
     $('drop-gpx').classList.add('loaded');
     renderGpxSummary();
+    if (state.sheets.length && verifyDistColumns().length) renderSheets();
     if (!$('opt-title').value && state.track.name) $('opt-title').value = state.track.name;
     guessEventDateTime();
     show('step3', true);
@@ -73,6 +74,12 @@
     });
     $('status-xlsx').textContent = filename + '（' + sheets.length + 'シート）';
     $('drop-xlsx').classList.add('loaded');
+    if (state.sheets.every(function (s) { return s.rows.length === 0; })) {
+      showError('シートからデータを読み取れませんでした。\n' +
+        '一部のアプリが書き出したxlsx（名前空間付きの形式）には対応していません。\n' +
+        'ExcelやGoogleスプレッドシート、LibreOfficeで開いて .xlsx として保存し直すと読めます。');
+    }
+    verifyDistColumns();
     renderSheets();
     show('step2', true);
     show('step3', true);
@@ -81,6 +88,25 @@
       if (t) $('opt-title').value = U.normalizeText(t);
     }
     guessEventDateTime();
+  }
+
+  /** 距離列をデータで検証し、必要なら選び直す（GPXがあれば総距離と突き合わせる） */
+  function verifyDistColumns() {
+    var gpxTotal = state.track ? state.track.totalKm : null;
+    var fixed = [];
+    state.sheets.forEach(function (sheet) {
+      if (sheet.role === 'ignore') return;
+      var r = X.chooseDistColumn(sheet.rows, sheet.headerRow, sheet.colMap, gpxTotal);
+      if (r && r.changed) {
+        sheet.colMap.dist = r.col;
+        fixed.push(sheet.name + '：' + colName(r.col) + '列（最大' + Math.round(r.max * 10) / 10 + 'km）');
+      }
+    });
+    if (fixed.length) {
+      $('gen-progress').textContent = '積算距離の列をデータから判定し直しました → ' + fixed.join(' / ');
+      show('gen-progress', true);
+    }
+    return fixed;
   }
 
   function guessRole(sheetName, colMap) {

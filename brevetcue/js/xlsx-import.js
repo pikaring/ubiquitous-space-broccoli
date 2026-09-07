@@ -7,22 +7,23 @@
   /* ---------- 列の役割と推定キーワード ---------- */
   var ROLES = [
     { key: 'no',        label: 'No.',        kw: ['no', 'no.', '№', '番号', '番'] },
-    { key: 'kind',      label: '種別',       kw: ['種別', '区分', 'チェック種別', 'cp種別', 'type', '種類'] },
-    // 「地点までの道路番号」「地点までの区間」のような見出しを地点名と誤認しないよう avoid を持たせる
-    { key: 'name',      label: '地点名',     kw: ['地点', '名称', '場所', 'チェックポイント', 'cp名', 'ポイント', '店名', 'pc', '通過チェック', 'name'],
-      avoid: /距離|km|区間|積算|累積|道路|番号|時刻|open|close|進路/i },
-    { key: 'dist',      label: '積算距離',   kw: ['積算', '累積', '通算', 'total', '積算距離', '距離(積算)', 'distance', '距離'] },
-    { key: 'segDist',   label: '区間距離',   kw: ['区間', '区間距離', 'ラップ', 'lap', '次まで'] },
+    { key: 'kind',      label: '種別',       kw: ['種別', '区分', 'チェック種別', 'cp種別', 'type', '種類', 'pc'],
+      avoid: /pc[～~〜間]|間|オープン|クローズ|open|close|情報|その他|備考|参考/i },
+    // 「地点までの道路番号」「PC間」のような見出しを地点名と誤認しないよう avoid を持たせる
+    { key: 'name',      label: '地点名',     kw: ['通過点', '地点', '名称', '場所', 'チェックポイント', 'cp名', 'ポイント名', 'point name', '店名', '通過チェック', 'name'],
+      avoid: /距離|km|区間|積算|累積|合計|道路|番号|時刻|open|close|進路|情報|その他|備考|pc[～~〜間]/i },
+    { key: 'dist',      label: '積算距離',   kw: ['積算', '累積', '通算', '合計', '累計', 'トータル', 'total', '積算距離', '距離(積算)', 'distance', '総距離', '距離'] },
+    { key: 'segDist',   label: '区間距離',   kw: ['区間', '区間距離', 'ラップ', 'lap', '次まで', 'trip'] },
     { key: 'open',      label: 'Open',       kw: ['open', 'オープン', '開', '通過可能', 'ｵｰﾌﾟﾝ'] },
     { key: 'close',     label: 'Close',      kw: ['close', 'クローズ', '閉', '制限', 'ｸﾛｰｽﾞ', 'クローズ時刻'] },
-    { key: 'direction', label: '進路',       kw: ['進路', '方向', '進行', '曲がる', '右左折', 'ターン', 'turn'] },
-    { key: 'road',      label: '道路名',     kw: ['道路', '道路名', '経路', 'ルート', '路線', '道'] },
+    { key: 'direction', label: '進路',       kw: ['進路', '方向', '進行', '曲がる', '右左折', 'ターン', 'turn', 'dir'] },
+    { key: 'road',      label: '道路名',     kw: ['道路', '道路名', '経路', 'ルート', '路線', 'route', 'rt', '道'] },
     { key: 'sign',      label: '道標',       kw: ['道標', '青看板', '看板', '標識', '方面'],
-      avoid: /備考|メモ|注意|コメント/ },
-    { key: 'cross',     label: '交差点の形',  kw: ['交差', '交差点', '形状'] },
+      avoid: /備考|情報|その他|メモ|注意|コメント/ },
+    { key: 'cross',     label: '交差点の形',  kw: ['交差', '交差点', '形状', 'cr'] },
     { key: 'landmark',  label: 'ランドマーク', kw: ['目印', 'ランドマーク', '目標', '目標物'] },
-    { key: 'signal',    label: '信号',       kw: ['信号', 'signal', '信号機'] },
-    { key: 'note',      label: '備考',       kw: ['備考', '注意', 'コメント', 'メモ', '補足', '注記', 'remarks'] }
+    { key: 'signal',    label: '信号',       kw: ['信号', 'signal', '信号機', 'sig'] },
+    { key: 'note',      label: '備考',       kw: ['備考', '情報', 'その他', '注意', 'コメント', 'メモ', '補足', '注記', 'remarks', 'guide', 'landmark'] }
   ];
 
   /* ---------- ワークブック読取 ---------- */
@@ -88,7 +89,7 @@
         else { texts++; if (U.normalizeText(v).length > 14) longText++; }
       });
       // 数値が入っている＝データ行。小見出しは短い文字列だけの行。
-      if (numbers > 0 || texts === 0 || longText > 1) break;
+      if (numbers > 0 || texts < 2 || longText > 1) break;
       next.forEach(function (v, i) {
         var t = U.normalizeText(v);
         if (!t) return;
@@ -123,6 +124,56 @@
       if (bestCol >= 0) { map[role.key] = bestCol; used[bestCol] = true; }
     });
     return map;
+  }
+
+  /**
+   * 積算距離の列を、見出しだけでなくデータからも検証する。
+   * 「ADD」「TRIP」のように見出しから判別できない書式や、区間距離を掴んでいる場合に効く。
+   * @param {number} gpxTotalKm GPXの総距離（あれば精度が上がる）
+   * @returns {{col:number, changed:boolean, max:number}|null}
+   */
+  function chooseDistColumn(rows, headerRow, colMap, gpxTotalKm) {
+    var start = headerRow + 1;
+    var width = 0;
+    rows.forEach(function (r) { width = Math.max(width, r.length); });
+
+    function evaluate(col) {
+      var v = [];
+      for (var r = start; r < rows.length; r++) {
+        var x = rows[r] ? rows[r][col] : null;
+        if (typeof x === 'number' && isFinite(x)) v.push(x);
+        else if (typeof x === 'string' && /^\s*\d+(\.\d+)?\s*(km)?\s*$/i.test(x)) v.push(parseFloat(x));
+      }
+      if (v.length < 5) return null;
+      for (var i = 1; i < v.length; i++) if (v[i] < v[i - 1] - 0.05) return null;   // 単調増加でないと積算ではない
+      var max = v[v.length - 1];
+      if (max <= 1 || max > 2000) return null;      // 日付シリアル値などを除外
+      var frac = v.filter(function (x) { return Math.abs(x - Math.round(x)) > 0.01; }).length / v.length;
+      var score;
+      if (gpxTotalKm) {
+        var err = Math.abs(max - gpxTotalKm) / gpxTotalKm;
+        if (err > 0.3) return null;
+        score = 1000 - err * 2000;
+      } else {
+        score = Math.min(max, 1500) / 10 + frac * 20;   // 値域が大きく小数を含む列ほど距離らしい
+      }
+      return { col: col, score: score, max: max, count: v.length };
+    }
+
+    var skip = {};
+    ['no', 'open', 'close'].forEach(function (k) { if (colMap[k] !== undefined) skip[colMap[k]] = 1; });
+
+    var current = colMap.dist !== undefined ? evaluate(colMap.dist) : null;
+    var best = null;
+    for (var c = 0; c < width; c++) {
+      if (skip[c]) continue;
+      var e = evaluate(c);
+      if (e && (!best || e.score > best.score)) best = e;
+    }
+    if (!best) return null;
+    if (current && current.col === best.col) return { col: best.col, changed: false, max: best.max };
+    if (current && current.score >= best.score) return { col: current.col, changed: false, max: current.max };
+    return { col: best.col, changed: colMap.dist !== best.col, max: best.max };
   }
 
   /* ---------- 値パーサ ---------- */
@@ -169,6 +220,10 @@
     if ((mm = s.match(/^(\d{1,2})\s*[\/月]\s*(\d{1,2})\s*日?\s+(\d{1,2}):(\d{2})/))) {
       return { type: 'md', month: parseInt(mm[1], 10), day: parseInt(mm[2], 10), minutes: parseInt(mm[3], 10) * 60 + parseInt(mm[4], 10) };
     }
+    // 「7/0:40」（日/時刻）。月日ではなく日付＋時刻として扱う
+    if ((mm = s.match(/^(\d{1,2})\s*\/\s*(\d{1,2})\s*[:：]\s*(\d{2})$/))) {
+      return { type: 'dom', day: parseInt(mm[1], 10), minutes: parseInt(mm[2], 10) * 60 + parseInt(mm[3], 10) };
+    }
     // 「12日 08:12」
     if ((mm = s.match(/^(\d{1,2})\s*日\s*(\d{1,2}):(\d{2})/))) {
       return { type: 'dom', day: parseInt(mm[1], 10), minutes: parseInt(mm[2], 10) * 60 + parseInt(mm[3], 10) };
@@ -195,7 +250,14 @@
 
     function resolveOne(p, floor) {
       if (!p) return null;
-      if (p.type === 'abs') return Math.round((p.wallMs - startWall) / 60000);
+      if (p.type === 'abs') {
+        var min = Math.round((p.wallMs - startWall) / 60000);
+        // 主催者のテンプレートに古い日付が残っている場合があるので、
+        // 出走日から大きく外れていたら日付は捨てて時刻だけ使う
+        if (min >= -720 && min <= 43200) return min;
+        var tod = Math.round((((p.wallMs % 86400000) + 86400000) % 86400000) / 60000);
+        p = { type: 'tod', minutes: tod };
+      }
       if (p.type === 'md' || p.type === 'dom') {
         // 出走日の前後20日から該当日を選ぶ
         var best = null, bestAbs = Infinity;
@@ -230,14 +292,15 @@
   // 「左側　PC1  セブンイレブン…」のように前置きがある書式もあるため、
   // 行頭に限定せず、語として独立しているCP表記を探す。
   // PC/CPは番号付きのときだけ拾う（「PCを通過」のような文章に反応しないように）
-  var CP_MARK = /(^|[\s　\/／・（(【\[])(start|goal|finish|ゴール|スタート|pc\s*\d+|cp\s*\d+|通過c\s*\d*|通過チェック\s*\d*|フォトチェック\s*\d*)([\s　:：・]*)/i;
+  var CP_MARK = /(^|[\s　\/／・（(【\[])(start|goal|finish|ゴール|スタート|pc\s*\d+|cp\s*\d+|control\s*\d+|コントロール\s*\d+|通過c\s*\d*|通過チェック\s*\d*|フォトチェック\s*\d*)([\s　:：・]*)/i;
 
   /** CP名の後ろに続く注記（レシート取得、OPEN…など）を落として地点名だけにする */
   function trimCpName(text) {
-    var t = String(text || '').split(/[\r\n]/)[0];
-    t = U.normalizeText(t);
+    var t = U.normalizeText(String(text || ''));
+    // 注記が始まるところで切る（改行は主催者によって位置がまちまちなので使わない）
     t = t.replace(/\s*[［\[（(]?\s*(参考\s*)?(open|close)[\s\S]*$/i, '');
-    t = t.replace(/\s*(レシート取得|写真を?撮影|目標物撮影|カード提示)[\s\S]*$/, '');
+    t = t.replace(/\s*(コントロール[。．]|レシート|写真を?撮影|目標物撮影|カード提示|フォトチェック|通過時間)[\s\S]*$/, '');
+    t = t.replace(/[。．][\s\S]*$/, '');
     return t.trim();
   }
 
@@ -249,7 +312,47 @@
       var m = t.match(new RegExp(word + '[^0-9]{0,6}(\\d{1,2})\\s*[:：時]\\s*(\\d{2})', 'i'));
       return m ? { type: 'tod', minutes: parseInt(m[1], 10) * 60 + parseInt(m[2], 10) } : null;
     }
-    return { open: pick('open'), close: pick('close') };
+    var o = pick('open'), c = pick('close');
+    if (o || c) return { open: o, close: c };
+
+    // 「06:00～06:30」「7:16〜9:09」「14:36～26日1:24」のような範囲表記
+    var m2 = t.match(/(\d{1,2})\s*[:：]\s*(\d{2})\s*[〜～~ー－-]\s*(?:(\d{1,2})\s*日\s*)?(\d{1,2})\s*[:：]\s*(\d{2})/);
+    if (!m2) return { open: null, close: null };
+    var close = { type: 'tod', minutes: parseInt(m2[4], 10) * 60 + parseInt(m2[5], 10) };
+    if (m2[3]) close = { type: 'dom', day: parseInt(m2[3], 10), minutes: close.minutes };
+    return {
+      open: { type: 'tod', minutes: parseInt(m2[1], 10) * 60 + parseInt(m2[2], 10) },
+      close: close
+    };
+  }
+
+  /** 行のどこかにある時刻範囲を拾う（時刻列が無い書式向け） */
+  function findTimesInRow(row, skipCol) {
+    // まずは1セルの中に範囲や OPEN/CLOSE が書かれている形式
+    for (var i = 0; i < row.length; i++) {
+      if (i === skipCol) continue;
+      if (typeof row[i] !== 'string') continue;
+      var r = parseTimesInText(row[i]);
+      if (r.open || r.close) return r;
+    }
+    // 次に「参考10:45」「参考11:45」のように単独時刻が別々の列に入っている形式
+    var found = [];
+    for (var j = 0; j < row.length; j++) {
+      if (j === skipCol) continue;
+      if (typeof row[j] !== 'string') continue;
+      var cell = U.normalizeText(row[j]);
+      var md = cell.match(/(\d{1,2})\s*[\/日]\s*(\d{1,2})\s*[:：]\s*(\d{2})(?![\d:：])/);
+      if (md) {
+        found.push({ type: 'dom', day: parseInt(md[1], 10), minutes: parseInt(md[2], 10) * 60 + parseInt(md[3], 10) });
+      } else {
+        var m = cell.match(/(?:^|[^\d])(\d{1,2})\s*[:：]\s*(\d{2})(?![\d:：])/);
+        if (m) found.push({ type: 'tod', minutes: parseInt(m[1], 10) * 60 + parseInt(m[2], 10) });
+      }
+      if (found.length === 2) break;
+    }
+    if (found.length === 2) return { open: found[0], close: found[1] };
+    if (found.length === 1) return { open: null, close: null, single: found[0] };
+    return { open: null, close: null };
   }
 
   function findCpCell(row) {
@@ -287,7 +390,7 @@
     if (/start|スタート|出発/.test(s)) return 'start';
     if (/クイズ|問題/.test(s)) return 'quiz';
     if (/通過|フォト|写真|photo/.test(s)) return 'pass';
-    if (/\bpc\d*\b|pc\s*\d|ポイントコントロール|コントロール|レシート/.test(s)) return 'pc';
+    if (/\bpc\d*\b|pc\s*\d|control|ポイントコントロール|コントロール|レシート/.test(s)) return 'pc';
     return null;
   }
 
@@ -308,7 +411,10 @@
     readWorkbook: readWorkbook,
     guessHeaderRow: guessHeaderRow,
     resolveHeader: resolveHeader,
+    chooseDistColumn: chooseDistColumn,
     findCpCell: findCpCell,
+    findTimesInRow: findTimesInRow,
+    parseTimesInText: parseTimesInText,
     guessColumns: guessColumns,
     parseDistance: parseDistance,
     parseTimeCell: parseTimeCell,

@@ -448,6 +448,53 @@ check('矢印だけの進路欄は日本語で表示する',
   places5.slice(0, 3).map(t => t.trim()).join(' / '));
 await page5.close();
 
+/* ====== シナリオ6：英語見出し＋見出しから判別できない積算列（ADD）＋古い日付のシリアル値 ====== */
+async function runFormat(name, xlsxFile, checks) {
+  const pg = await browser.newPage({ viewport: { width: 430, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
+  pg.on('pageerror', e => errors.push(`pageerror(${name}): ` + e.message));
+  pg.on('console', m => {
+    if (m.type() === 'error' && !isNetError(m.text())) errors.push(`console(${name}): ` + m.text());
+  });
+  await pg.route('**cyberjapandata.gsi.go.jp/**', r => r.abort());
+  await pg.route('**/api.open-meteo.com/**', r => r.abort());
+  await pg.goto(base, { waitUntil: 'load' });
+  await pg.setInputFiles('#file-gpx', path.join(root, 'samples/demo.gpx'));
+  await pg.setInputFiles('#file-xlsx', path.join(root, 'samples/' + xlsxFile));
+  await pg.waitForSelector('#step2:not(.hidden)');
+  await pg.fill('#opt-date', '2026-10-10');
+  await pg.selectOption('#opt-embed-map', 'none');
+  await pg.click('#btn-generate');
+  await pg.waitForSelector('#step4:not(.hidden)', { timeout: 60000 });
+  const fr = pg.frameLocator('#preview');
+  await fr.locator('#cp-list .cp-item').first().waitFor();
+  await checks(pg, fr);
+  await pg.close();
+}
+
+await runFormat('english', 'demo-english-add.xlsx', async (pg, fr) => {
+  const warn = await pg.isHidden('#gen-error') ? '' : await pg.textContent('#gen-error');
+  check('英語見出しでもExcelのCP・時刻を使う', !/ACP基準/.test(warn) && !/ウェイポイント/.test(warn),
+    warn.replace(/\n/g, ' ').slice(0, 60) || '警告なし');
+  const km = (await fr.locator('#cp-list .dist-val').allTextContents()).map(parseFloat);
+  check('見出しから判別できない積算列（ADD）をデータから選ぶ',
+    km.length === 6 && km[5] > 200 && km[5] < 220, km.join(' / '));
+  const closes = (await fr.locator('#cp-list .chip-close').allTextContents()).map(t => t.replace(/\s/g, ''));
+  check('古い年のシリアル値でも時刻だけ使う',
+    /18:30/.test(closes[0]) && await fr.locator('#cp-list .chip-close.est').count() === 0, closes.join(' / '));
+});
+
+/* ====== シナリオ7：Audax標準型（通過点／合計／「6:00～6:30」の範囲表記／Control表記） ====== */
+await runFormat('audax', 'demo-audax-range.xlsx', async (pg, fr) => {
+  const titles = await fr.locator('#cp-list .cp-title').allTextContents();
+  check('Control表記をCPとして拾い、ラベルと地点名を分ける',
+    titles.length === 6 && /Control1[\s　]*デモマート東町店/.test(titles[1]), titles.slice(0, 3).join(' / '));
+  const opens = (await fr.locator('#cp-list .chip-open').allTextContents()).map(t => t.replace(/\s/g, ''));
+  check('「18:48～19:49」の範囲表記からOpen/Closeを読む',
+    /Open18:48/.test(opens[1]) && await fr.locator('#cp-list .chip-open.est').count() === 0, opens.slice(0, 3).join(' / '));
+  const km = (await fr.locator('#cp-list .dist-val').allTextContents()).map(parseFloat);
+  check('「合計」列を積算距離として使う', km[5] > 200 && km[5] < 220, km.join(' / '));
+});
+
 check('JSエラーが発生しない', errors.length === 0, errors.join(' | '));
 
 await browser.close();
