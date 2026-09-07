@@ -91,6 +91,7 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
 .chip-eta.ontime { background:var(--chip-ontime-bg); color:var(--accent-green); }
 .chip-eta.slow { background:var(--chip-slow-bg); color:var(--accent-red); }
 .chip-rest { background:var(--chip-plain-bg); color:var(--accent-gold); }
+.time-chip.est, .cp-time-chip.est { opacity:.75; border:1px dashed currentColor; }
 .cp-detail { background:var(--bg-card-alt); padding:10px 16px 14px; border-top:1px solid var(--border-color); font-size:13px; color:var(--text-main); line-height:1.7; display:none; }
 .cp-detail.open { display:block; }
 .rest-row { display:flex; align-items:center; gap:6px; margin-top:8px; flex-wrap:wrap; }
@@ -338,8 +339,8 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
             '<span class="dist-text"><span class="dist-val">' + dispDist(cp.distKm) + '</span> <span class="unit">KM</span></span>' +
             (cp.segKm ? '<span class="seg-text">区間 ' + cp.segKm.toFixed(1) + 'km</span>' : '') +
             '<div class="time-row">' +
-              (cp.openMin != null ? '<span class="time-chip chip-open"><span class="chip-label">Open</span>' + fmtClock(cp.openMin) + '</span>' : '') +
-              (cp.closeMin != null ? '<span class="time-chip chip-close"><span class="chip-label">Close</span>' + fmtClock(cp.closeMin) + '</span>' : '') +
+              (cp.openMin != null ? '<span class="time-chip chip-open' + (cp.openEst ? ' est' : '') + '"><span class="chip-label">Open' + (cp.openEst ? '（推定）' : '') + '</span>' + fmtClock(cp.openMin) + '</span>' : '') +
+              (cp.closeMin != null ? '<span class="time-chip chip-close' + (cp.closeEst ? ' est' : '') + '"><span class="chip-label">Close' + (cp.closeEst ? '（推定）' : '') + '</span>' + fmtClock(cp.closeMin) + '</span>' : '') +
               (cp.distKm > 0 ? '<span class="time-chip chip-eta" data-eta="' + i + '"><span class="chip-label">ETA</span><span class="eta-time">—</span></span>' : '') +
               (rest > 0 ? '<span class="time-chip chip-rest"><span class="chip-label">休憩</span>' + fmtDur(rest) + '</span>' : '') +
             '</div>' +
@@ -397,9 +398,10 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
         if (c.kind === 'turn') {
           var sig = c.signal === true ? '<div class="turn-signal sig-green">●</div>'
                   : (c.signal === false ? '<div class="turn-signal sig-none">×</div>' : '');
+          var cross = c.cross ? '<div class="turn-cross">' + esc(c.cross) + '</div>' : '';
           html += '<div class="turn-row">' +
             '<div class="turn-main">' +
-              '<div class="turn-side"><div class="turn-arrow">' + (ARROWS[c.direction] || '↑') + '</div>' + sig + '</div>' +
+              '<div class="turn-side"><div class="turn-arrow">' + (ARROWS[c.direction] || '↑') + '</div>' + sig + cross + '</div>' +
               '<div class="turn-body">' +
                 '<div class="turn-top">' +
                   '<span class="turn-place">No.' + c.no + '　' + esc(c.directionText || DIR_LABEL[c.direction] || '') + '</span>' +
@@ -423,8 +425,8 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
             '</div>' +
             '<div class="cp-name-detail">' + esc(c.name || '') + '</div>' +
             '<div class="cp-times">' +
-              (c.openMin != null ? '<span class="cp-time-chip chip-open2"><span class="tl">Open</span>' + fmtClock(c.openMin) + '</span>' : '') +
-              (c.closeMin != null ? '<span class="cp-time-chip chip-close2"><span class="tl">Close</span>' + fmtClock(c.closeMin) + '</span>' : '') +
+              (c.openMin != null ? '<span class="cp-time-chip chip-open2' + (c.openEst ? ' est' : '') + '"><span class="tl">Open' + (c.openEst ? '（推定）' : '') + '</span>' + fmtClock(c.openMin) + '</span>' : '') +
+              (c.closeMin != null ? '<span class="cp-time-chip chip-close2' + (c.closeEst ? ' est' : '') + '"><span class="tl">Close' + (c.closeEst ? '（推定）' : '') + '</span>' + fmtClock(c.closeMin) + '</span>' : '') +
             '</div>' +
             (c.road ? '<div class="cp-note">' + esc(c.road) + '</div>' : '') +
             (c.landmark ? '<div class="cp-note">' + esc(c.landmark) + '</div>' : '') +
@@ -875,6 +877,7 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
           kind: c.kind, label: c.label, name: c.name, distKm: round1(c.distKm), segKm: round1(c.segKm || 0),
           openMin: c.openMin == null ? null : Math.round(c.openMin),
           closeMin: c.closeMin == null ? null : Math.round(c.closeMin),
+          openEst: !!c.openEst, closeEst: !!c.closeEst,
           note: c.note || '', road: c.road || '', landmark: c.landmark || '',
           lat: round6(c.lat), lon: round6(c.lon), bearing: round1(c.bearing || 0)
         };
@@ -888,13 +891,14 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
         if (c.kind === 'turn') {
           o.no = c.no; o.direction = c.direction; o.directionText = c.directionText || '';
           o.road = c.road || ''; o.landmark = c.landmark || ''; o.note = c.note || '';
-          o.sign = c.sign || '';
+          o.sign = c.sign || ''; o.cross = c.cross || '';
           o.name = c.name || ''; o.signal = (c.signal === null || c.signal === undefined) ? null : c.signal;
         } else {
           o.label = c.label; o.name = c.name || ''; o.note = c.note || '';
           o.road = c.road || ''; o.landmark = c.landmark || '';
           o.openMin = c.openMin == null ? null : Math.round(c.openMin);
           o.closeMin = c.closeMin == null ? null : Math.round(c.closeMin);
+          o.openEst = !!c.openEst; o.closeEst = !!c.closeEst;
         }
         return o;
       })

@@ -4,6 +4,12 @@
   var U = NS.util, G = NS.gpx, X = NS.xlsxImport;
 
   var DIR_PATTERNS = [
+    { re: /^[↑⬆︎]$|^↑/, dir: 'straight' },
+    { re: /^[→⇒➡︎]$|^→/, dir: 'right' },
+    { re: /^[←⇐⬅︎]$|^←/, dir: 'left' },
+    { re: /^[↓⬇︎]$|^↓/, dir: 'uturn' },
+    { re: /^↗/, dir: 'slight-right' },
+    { re: /^↖/, dir: 'slight-left' },
     { re: /uターン|ユーターン|u-?turn|折り返し/i, dir: 'uturn' },
     { re: /斜め?右|右斜め/, dir: 'slight-right' },
     { re: /斜め?左|左斜め/, dir: 'slight-left' },
@@ -26,7 +32,7 @@
     var s = U.normalizeText(text);
     if (!s) return null;
     if (/^(なし|無|×|x|✕|-|ー|no)$/i.test(s)) return false;
-    if (/(信号|あり|有|○|◯|●|yes|y|1)/i.test(s)) return true;
+    if (/(信号|あり|有|○|◯|●|◎|⦿|yes|y|1)/i.test(s)) return true;
     return null;
   }
 
@@ -101,6 +107,7 @@
         road: U.normalizeText(cell('road')),
         landmark: U.normalizeText(cell('landmark')),
         sign: U.normalizeText(cell('sign')),
+        cross: U.normalizeText(cell('cross')),
         signal: parseSignal(cell('signal')),
         note: U.normalizeText(cell('note'))
       };
@@ -120,7 +127,13 @@
           rec.cpMarker = hit.marker;
           rec.cpCol = hit.col;
           if (!rec.name) rec.name = hit.name || hit.text;
-          if (rec.sign === hit.text) rec.sign = '';     // 道標欄がCP名だったので道標としては出さない
+          // CP名を取り出した欄は、残りの注記だけを備考として残す
+          ['sign', 'landmark', 'note'].forEach(function (k) {
+            if (rec[k] === hit.text) rec[k] = hit.after || '';
+          });
+          // Open/Closeの列が無く、文中に「OPEN 9：14/CLOSE 13：20」と書かれている書式
+          if (!rec.openRaw && hit.times.open) rec.openRaw = hit.times.open;
+          if (!rec.closeRaw && hit.times.close) rec.closeRaw = hit.times.close;
         }
       }
       // Open/Closeが両方入っている行は、種別が読めなくてもCPとして扱う
@@ -304,11 +317,14 @@
     if (opt.acpFallback !== false) {
       var limitMin = opt.timeLimitMin || acpTotalLimitMin(totalKm);
       cps.forEach(function (c) {
-        if (c.openMin == null) { c.openMin = c.kind === 'start' ? 0 : acpOpenMin(c.distKm); acpUsed = true; }
+        if (c.openMin == null) {
+          c.openMin = c.kind === 'start' ? 0 : acpOpenMin(c.distKm);
+          c.openEst = true; acpUsed = true;
+        }
         if (c.closeMin == null) {
           c.closeMin = c.kind === 'start' ? 30
             : (c.kind === 'goal' ? limitMin : Math.min(limitMin, acpCloseMin(c.distKm)));
-          acpUsed = true;
+          c.closeEst = true; acpUsed = true;
         }
       });
     }
@@ -324,6 +340,7 @@
         directionText: r.directionText,
         road: r.road,
         sign: r.sign,
+        cross: r.cross,
         landmark: r.landmark,
         signal: r.signal,
         note: r.note,

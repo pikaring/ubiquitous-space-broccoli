@@ -209,5 +209,34 @@ fs.writeFileSync(path.join(root, 'samples/demo-merged-header.xlsx'),
   XLSX.write(wb3, { type: 'buffer', bookType: 'xlsx' }));
 console.log(`2行見出し版: ${mhRows.length - 3}行`);
 
+/* ---- 進行方向が矢印記号で、時刻が備考欄の文中にある形式（別の主催者の型） ---- */
+const arRows = [
+  ['デモBRM1010サンプル200km', null, null, null, null, null, null, '2026年10月10日　18：00スタート　V1.0'],
+  ['No.', '総距離', '区間距離', '進行方向', '交差点', '信号', '進行先の道路', '備考【青看板表示】']
+];
+const ARROW = { '右折': '→', '左折': '←', '直進': '↑' };
+const CROSS = ['╋', '┫', '┻', '┃'];
+let arPrev = 0, arNo = 0, arCross = 0;
+merged.forEach(row => {
+  const km = row.type === 'turn' ? row.km : row.c.km;
+  const seg = Math.round((km - arPrev) * 10) / 10;
+  arPrev = km;
+  if (row.type === 'turn') {
+    arRows.push([++arNo, km, seg, ARROW[row.t.dir] || '↑', CROSS[arCross++ % 4],
+      row.t.signal === '有' ? '◎' : null, row.t.road, '【' + (row.t.landmark || '直進') + '】']);
+  } else {
+    const c = row.c;
+    const label = c.kind === 'Start' ? 'START' : (c.kind === 'Goal' ? 'FINISH' : c.kind);
+    const times = `OPEN ${hhmm(c.openMin).replace(':', '：')}/CLOSE ${hhmm(c.closeMin).replace(':', '：')}`;
+    arRows.push([++arNo, km, seg, '↑', '┃', null, '',
+      `左側　${label}  ${c.name}\r\nレシート取得　［参考 ${times}］`]);
+  }
+});
+const wb4 = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb4, XLSX.utils.aoa_to_sheet(arRows), 'Table 1');
+fs.writeFileSync(path.join(root, 'samples/demo-arrow-notes.xlsx'),
+  XLSX.write(wb4, { type: 'buffer', bookType: 'xlsx' }));
+console.log(`矢印＋文中時刻版: ${arRows.length - 2}行`);
+
 console.log(`GPX  : ${pts.length} trkpts / ${gpxTotalKm.toFixed(2)} km / wpt ${cps.filter(c=>c.kind!=='Start'&&c.kind!=='Goal').length}`);
 console.log(`Excel: 簡易 ${cps.length} CP / 詳細 ${detailRows.length - 1} 行 / 総距離 ${totalKm} km`);
