@@ -442,6 +442,10 @@ check('矢印記号から進路を判定する',
 check('交差点の形を表示する', await f5.locator('#cue-list .turn-cross').count() > 20,
   await f5.locator('#cue-list .turn-cross').first().textContent());
 check('信号◎を「信号あり」と読む', await f5.locator('#cue-list .sig-green').count() > 0);
+const places5 = await f5.locator('#cue-list .turn-place').allTextContents();
+check('矢印だけの進路欄は日本語で表示する',
+  places5.slice(0, 4).every(t => /右折|左折|直進/.test(t)) && !places5.some(t => /[→←↑]/.test(t)),
+  places5.slice(0, 3).map(t => t.trim()).join(' / '));
 await page5.close();
 
 check('JSエラーが発生しない', errors.length === 0, errors.join(' | '));

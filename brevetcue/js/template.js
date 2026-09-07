@@ -317,6 +317,13 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
       'slight-right': '斜め右', 'slight-left': '斜め左', 'sharp-right': '鋭角右折', 'sharp-left': '鋭角左折'
     };
 
+    /** 進路の表示。元が「→」などの記号だけなら日本語にする */
+    function dirLabel(c) {
+      var t = (c.directionText || '').trim();
+      if (t && /[ぁ-んァ-ヶ一-龥a-zA-Z]/.test(t)) return t;
+      return DIR_LABEL[c.direction] || t;
+    }
+
     function badgeHtml(cp) {
       var b = KIND_BADGE[cp.kind] || { cls: 'badge-pc', text: '' };
       var text = (cp.kind === 'pc' || cp.kind === 'pass' || cp.kind === 'quiz')
@@ -404,7 +411,7 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
               '<div class="turn-side"><div class="turn-arrow">' + (ARROWS[c.direction] || '↑') + '</div>' + sig + cross + '</div>' +
               '<div class="turn-body">' +
                 '<div class="turn-top">' +
-                  '<span class="turn-place">No.' + c.no + '　' + esc(c.directionText || DIR_LABEL[c.direction] || '') + '</span>' +
+                  '<span class="turn-place">No.' + c.no + '　' + esc(dirLabel(c)) + '</span>' +
                   '<span class="turn-dist"><span class="km dist-val" data-base="' + c.distKm + '">' + dispDist(c.distKm) + '</span> km</span>' +
                 '</div>' +
                 (c.road ? '<div class="turn-road">' + esc(c.road) + '</div>' : '') +
