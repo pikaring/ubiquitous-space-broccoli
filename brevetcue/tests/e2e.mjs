@@ -208,12 +208,18 @@ const outFrame = page.frames().find(f => f !== page.mainFrame());
 await outFrame.evaluate(() => { window.__CUE_SCHEME__ = 'app'; });
 await turnBtns.nth(30).click();
 const appPanel = frame.locator('#cue-list .turn-row .wx-panel.open').nth(2);
-await appPanel.locator('.wx-net-note').waitFor({ timeout: 5000 });
-const appText = (await appPanel.locator('.wx-net-note').innerText()).replace(/\n+/g, ' ');
-check('内部スキームでは待たずに理由を出す（地図を埋め込まなかった地点）',
-  /端末内のファイル/.test(appText) && /オンラインのURLから開くと表示されます/.test(appText), appText.slice(0, 60) + '…');
+await appPanel.locator('.wx-sketch').waitFor({ timeout: 5000 });
+check('タイルを埋め込まなかった地点はGPXの略図を出す',
+  await appPanel.locator('.wx-sketch svg path.rt-out').count() === 1 &&
+  await appPanel.locator('.wx-sketch svg polygon.rt-arrow').count() === 1 &&
+  /北が上/.test(await appPanel.locator('.wx-attr').innerText()),
+  await appPanel.locator('.wx-attr').innerText());
 check('内部スキームでは空の地図枠を出さない',
   await appPanel.locator('iframe').count() === 0 && await appPanel.locator('.wx-map-links a').count() === 3);
+check('埋め込み天気は待たずに出る',
+  /埋め込み予報/.test(await appPanel.locator('.wx-stamp').innerText()) &&
+  !/通信できないため/.test(await appPanel.locator('.wx-stamp').innerText()),
+  await appPanel.locator('.wx-stamp').innerText());
 
 /* iPhoneのローカルファイル状態でも、埋め込んだ地図と天気は表示できる */
 await frame.locator('#cue-list .cp-row .wx-toggle-btn').nth(1).click();
@@ -221,6 +227,7 @@ const cpPanel = frame.locator('#cue-list .cp-row .wx-panel.open').first();
 await cpPanel.locator('.wx-static-map').waitFor({ timeout: 5000 });
 check('通信なしで埋め込み地図を表示する',
   await cpPanel.locator('.wx-static-map img').count() > 0 &&
+  await cpPanel.locator('.wx-static-map svg path.rt-out').count() === 1 &&
   /地理院タイル/.test(await cpPanel.locator('.wx-attr').innerText()),
   (await cpPanel.locator('.wx-static-map img').count()) + 'タイル / ' + await cpPanel.locator('.wx-attr').innerText());
 const embWx = (await cpPanel.locator('.wx-weather-card').innerText()).replace(/\n+/g, ' ');
@@ -292,6 +299,17 @@ const errText = (await errPanel.locator('.wx-error').innerText()).replace(/\n+/g
 check('取得失敗時に理由と接続先を表示する',
   /取得できませんでした/.test(errText) && /api\.open-meteo\.com/.test(errText), errText);
 check('再試行ボタンが出る', await errPanel.locator('.wx-retry').count() === 1);
+
+/* 埋め込み天気が無い状態で内部スキームなら、待たずに理由を出す */
+const out2 = page2.frames().find(f => f !== page2.mainFrame());
+await out2.evaluate(() => { window.__CUE_SCHEME__ = 'app'; });
+await f2.locator('#cue-list .turn-row .wx-toggle-btn').nth(5).click();
+const noteP = f2.locator('#cue-list .turn-row .wx-panel.open').nth(1);
+await noteP.locator('.wx-net-note').waitFor({ timeout: 5000 });
+const noteText = (await noteP.locator('.wx-net-note').innerText()).replace(/\n+/g, ' ');
+check('内部スキーム＋埋め込み無しなら待たずに理由を出す',
+  /端末内のファイル/.test(noteText) && /オンラインのURLから開くと表示されます/.test(noteText),
+  noteText.slice(0, 60) + '…');
 
 await page2.close();
 

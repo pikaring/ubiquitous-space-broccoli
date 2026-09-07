@@ -275,7 +275,7 @@
           directionText: '',
           road: '', landmark: '', signal: null, note: '',
           name: '', auto: true, delta: t.delta,
-          lat: t.lat, lon: t.lon, bearing: t.bearingOut
+          lat: t.lat, lon: t.lon, bearing: t.bearingOut, gpxKm: t.km
         };
       });
     }
@@ -289,14 +289,14 @@
     function locate(pt, allowWpt) {
       var gpxKm = pt.distKm / scale;
       var loc = G.locateAtKm(track, gpxKm);
-      pt.lat = loc.lat; pt.lon = loc.lon; pt.ele = loc.ele;
+      pt.lat = loc.lat; pt.lon = loc.lon; pt.ele = loc.ele; pt.gpxKm = gpxKm;
       pt.bearing = G.bearingAtKm(track, gpxKm, opt.bearingSpanM || 200);
       pt.matchSource = '距離補間';
       if (allowWpt && opt.snapWaypoints !== false && pt.name) {
         var hit = findWaypoint(track, pt, gpxKm, wpOpt);
         if (hit) {
           var moveM = U.haversine(pt.lat, pt.lon, hit.w.lat, hit.w.lon);
-          pt.lat = hit.w.lat; pt.lon = hit.w.lon;
+          pt.lat = hit.w.lat; pt.lon = hit.w.lon; pt.gpxKm = hit.w.km;
           pt.bearing = G.bearingAtKm(track, hit.w.km, opt.bearingSpanM || 200);
           pt.matchSource = 'GPXウェイポイント（' + hit.w.name + '）';
           pt.snapMoveM = Math.round(moveM);
