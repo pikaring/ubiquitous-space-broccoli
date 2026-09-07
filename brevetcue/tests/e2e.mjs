@@ -313,6 +313,45 @@ check('内部スキーム＋埋め込み無しなら待たずに理由を出す'
 
 await page2.close();
 
+/* ================= シナリオ3：区間距離しか無いExcel ================= */
+const page3 = await browser.newPage({ viewport: { width: 430, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
+page3.on('pageerror', e => errors.push('pageerror(segment): ' + e.message));
+page3.on('console', m => {
+  if (m.type() === 'error' && !isNetError(m.text())) errors.push('console(segment): ' + m.text());
+});
+await page3.route('**cyberjapandata.gsi.go.jp/**', route => route.abort());
+await page3.route('**/api.open-meteo.com/**', route => route.abort());
+await page3.goto(base, { waitUntil: 'load' });
+await page3.setInputFiles('#file-gpx', path.join(root, 'samples/demo.gpx'));
+await page3.setInputFiles('#file-xlsx', path.join(root, 'samples/demo-segment.xlsx'));
+await page3.waitForSelector('#step2:not(.hidden)');
+await page3.fill('#opt-date', '2026-10-10');
+await page3.selectOption('#opt-embed-map', 'none');
+await page3.click('#btn-generate');
+await page3.waitForSelector('#step4:not(.hidden)', { timeout: 60000 });
+
+const segWarn = await page3.textContent('#gen-error');
+check('区間距離のExcelを積算に変換して知らせる',
+  /区間距離と判断/.test(segWarn) && /21[0-9]\.\dkm/.test(segWarn), (segWarn.match(/[^⚠]*区間距離[^⚠]*/) || [''])[0].trim());
+
+const f3 = page3.frameLocator('#preview');
+await f3.locator('#cp-list .cp-item').first().waitFor();
+await f3.locator('nav button[data-view="detail"]').click();
+await f3.locator('#cue-list > div').first().waitFor();
+const dists = (await f3.locator('#cue-list .dist-val').allTextContents()).map(parseFloat);
+const monotonic = dists.every((v, i) => i === 0 || v >= dists[i - 1] - 0.001);
+check('詳細版の距離が積算になり単調増加する',
+  monotonic && dists[dists.length - 1] > 200 && dists[dists.length - 1] < 220,
+  `${dists[0]} … ${dists[dists.length - 1]} km / ${dists.length}行`);
+
+const firstTurn = await f3.locator('#cue-list .turn-row .turn-place').first().textContent();
+check('曲がり角の並びが崩れない', /No\.1[^0-9]/.test(firstTurn), firstTurn.trim());
+
+const cpKm = (await f3.locator('#cp-list .dist-val').allTextContents()).map(parseFloat);
+check('CPの距離も積算になる',
+  cpKm.length === 6 && cpKm[0] === 0 && cpKm[5] > 200, cpKm.join(' / '));
+await page3.close();
+
 check('JSエラーが発生しない', errors.length === 0, errors.join(' | '));
 
 await browser.close();

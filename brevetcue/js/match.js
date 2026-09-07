@@ -122,6 +122,38 @@
     return out.filter(function (x) { return x.dist !== null; });
   }
 
+  /**
+   * 距離列が「積算」か「区間」かを判定し、区間なら積算に直す。
+   * 主催者によっては区間距離しか載っていない（見出しは「距離」だけ）ことがあり、
+   * そのまま積算として扱うと距離も並び順も座標も全部ずれる。
+   * @returns {{mode:'cumulative'|'segment', total:number}}
+   */
+  function normalizeDistances(recs, gpxTotalKm) {
+    var vals = recs.map(function (r) { return r.dist; }).filter(function (v) { return v !== null; });
+    if (vals.length < 3) return { mode: 'cumulative', total: vals.length ? vals[vals.length - 1] : 0 };
+
+    var drops = 0;
+    for (var i = 1; i < vals.length; i++) if (vals[i] < vals[i - 1] - 0.05) drops++;
+    var cumMax = Math.max.apply(null, vals);
+    var accTotal = vals.reduce(function (a, b) { return a + b; }, 0);
+    if (drops === 0) return { mode: 'cumulative', total: cumMax };
+
+    // 積算とみなした場合と、区間を足し上げた場合で、GPXの総距離に近い方を採用する
+    var ref = gpxTotalKm || cumMax;
+    var errCum = Math.abs(cumMax - ref) / ref;
+    var errAcc = Math.abs(accTotal - ref) / ref;
+    if (errAcc >= errCum) return { mode: 'cumulative', total: cumMax };
+
+    var acc = 0;
+    recs.forEach(function (r) {
+      if (r.dist === null) return;
+      acc += r.dist;
+      r.segDist = r.dist;             // 元の値は区間距離として残す
+      r.dist = Math.round(acc * 10) / 10;
+    });
+    return { mode: 'segment', total: Math.round(acc * 10) / 10 };
+  }
+
   /** GPXのwptから、CPに対応するものを探す */
   function findWaypoint(track, rec, interpKm, opt) {
     var best = null;
@@ -147,10 +179,19 @@
     opt = opt || {};
     var startDate = opt.startDate || new Date();
 
+    var notices = [];
     var simpleRecs = [], detailRecs = [];
     (sheets || []).forEach(function (s) {
       if (s.role === 'simple') simpleRecs = simpleRecs.concat(extractRecords(s));
       else if (s.role === 'detail') detailRecs = detailRecs.concat(extractRecords(s));
+    });
+    // 距離列の意味（積算／区間）をシートごとに判定して揃える
+    [['簡易', simpleRecs], ['詳細', detailRecs]].forEach(function (pair) {
+      if (!pair[1].length) return;
+      var r = normalizeDistances(pair[1], track.totalKm);
+      if (r.mode === 'segment') {
+        notices.push(pair[0] + 'シートの距離列は区間距離と判断し、積算距離に変換しました（合計 ' + r.total + 'km）。');
+      }
     });
 
     // 詳細シートしか無い場合は、そこからCPを拾う
@@ -186,6 +227,16 @@
     var excelMax = 0;
     simpleRecs.concat(detailRecs).forEach(function (r) { if (r.dist > excelMax) excelMax = r.dist; });
     var totalKm = opt.totalKmOverride || excelMax || track.totalKm;
+    // Excelの総距離がGPXとかけ離れている場合は採用しない（列の取り違えなどの取りこぼし）
+    if (!opt.totalKmOverride && track.totalKm > 0) {
+      var ratio = totalKm / track.totalKm;
+      if (ratio < 0.8 || ratio > 1.25) {
+        notices.push('Excelから読めた総距離 ' + Math.round(totalKm * 10) / 10 + 'km がGPX（' +
+          Math.round(track.totalKm * 10) / 10 + 'km）と大きく違うため、GPXの距離を使いました。' +
+          'STEP2で距離列の対応を確認してください。');
+        totalKm = track.totalKm;
+      }
+    }
     var scale = (track.totalKm > 0 && totalKm > 0) ? (totalKm / track.totalKm) : 1;
 
     /* --- CP（Start/PC/通過/Goal） --- */
@@ -249,9 +300,10 @@
     }
 
     /* --- 曲がり角 --- */
-    var turns = detailRecs.filter(function (r) { return !r.kind; }).map(function (r) {
+    var turns = detailRecs.filter(function (r) { return !r.kind; }).map(function (r, idx) {
       return {
         kind: 'turn',
+        order: idx,
         distKm: r.dist,
         no: (typeof r.no === 'number') ? r.no : null,
         direction: r.direction || 'straight',
@@ -322,8 +374,11 @@
     /* --- 詳細リスト（CP＋曲がり角を距離順に統合） --- */
     var cues = cps.concat(turns).sort(function (a, b) {
       if (a.distKm !== b.distKm) return a.distKm - b.distKm;
-      // 同一距離ならCPを先に
-      return (a.kind === 'turn' ? 1 : 0) - (b.kind === 'turn' ? 1 : 0);
+      // 同一距離ならCPを先に、その次は元の並び（No.順）を保つ
+      var k = (a.kind === 'turn' ? 1 : 0) - (b.kind === 'turn' ? 1 : 0);
+      if (k) return k;
+      if (a.no != null && b.no != null) return a.no - b.no;
+      return (a.order || 0) - (b.order || 0);
     });
     var turnNo = 0;
     cues.forEach(function (c) {
@@ -336,6 +391,7 @@
 
     var startPt = cps.length ? cps[0] : G.locateAtKm(track, 0);
     return {
+      notices: notices,
       meta: {
         title: opt.title || track.name || 'ブルベ キューシート',
         startName: (cps[0] && cps[0].name) || '',

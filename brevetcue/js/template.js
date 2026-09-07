@@ -184,6 +184,9 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
 @media (prefers-color-scheme: dark) {
   .wx-map-frame iframe { filter:invert(.92) hue-rotate(180deg) brightness(1.05) contrast(.95); }
 }
+.gen-notice { background:var(--chip-slow-bg); border-left:5px solid var(--accent-red); border-radius:10px; padding:11px 14px; margin-bottom:10px; font-size:13px; line-height:1.6; color:var(--text-main); }
+.gen-notice b { color:var(--accent-red); }
+.gen-notice ul { margin:4px 0 0 18px; }
 .footer-note { font-size:11px; color:var(--text-sub); text-align:center; padding:16px 8px 32px; line-height:1.6; }
 @media print {
   nav, .settings, .wx-toggle-row, .wx-panel, .chevron { display:none !important; }
@@ -845,6 +848,13 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
     var m = model.meta;
     var d = m.startDate instanceof Date ? m.startDate : new Date();
     var pad = function (n) { return String(n).padStart(2, '0'); };
+    // 推定値で補ったところは、閲覧者にはっきり分かるようにする（ブルベでは時刻が命に関わる）
+    var warnings = [];
+    if (m.acpTimes) warnings.push('Open／Closeに<b>主催者の公式値ではなくACP基準の推定値</b>を使った地点があります。必ず配布キューシートで確認してください。');
+    if (m.cpFromGpx) warnings.push('CP（PC・通過チェック）はExcelではなく<b>GPXのウェイポイント</b>から構成しています。');
+    if (m.autoTurns) warnings.push('曲がり角は<b>GPXの方位変化から自動抽出</b>したものです（道路名・ランドマークは入りません）。');
+    (model.notices || []).forEach(function (n) { warnings.push(NS.util.escapeHtml(n)); });
+
     var payload = {
       meta: {
         id: m.title,
@@ -903,6 +913,10 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
       '  <button data-view="detail" onclick="__cue.showView(\'detail\')">🗺 詳細</button>\n' +
       '</nav>\n' +
       '<main>\n' +
+      (warnings.length
+        ? '  <div class="gen-notice">⚠️ <b>この表示は自動生成です</b><ul><li>' +
+            warnings.join('</li><li>') + '</li></ul></div>\n'
+        : '') +
       '  <div class="settings">\n' +
       '    <div class="settings-title">🚴 出走日時・ペース（ETA・天気予報の計算に使用）</div>\n' +
       '    <div class="settings-row" style="margin-bottom:8px;">\n' +
