@@ -160,6 +160,8 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
 .wx-map-frame { width:100%; height:220px; border-radius:12px; overflow:hidden; border:1px solid var(--border-color); }
 .wx-map-frame iframe { width:100%; height:100%; border:none; }
 .wx-map-link { display:block; text-align:center; font-size:15px; color:var(--accent-blue); margin-top:8px; font-weight:700; }
+.wx-map-links { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:10px; }
+.wx-map-links a { flex:1; min-width:120px; text-align:center; background:var(--bg-card-alt); color:var(--accent-blue); border-radius:10px; padding:10px 8px; font-size:14px; font-weight:700; text-decoration:none; }
 .wx-outofrange { font-size:14px; color:var(--accent-gold); background:var(--bg-card-alt); border-radius:10px; padding:12px; text-align:center; font-weight:700; margin-bottom:10px; line-height:1.5; }
 .wx-net-note { font-size:13px; color:var(--accent-gold); background:var(--bg-card-alt); border-radius:10px; padding:10px 12px; margin-top:8px; font-weight:600; line-height:1.5; }
 .wx-error .wx-sub { display:block; margin-top:5px; font-size:12px; font-weight:600; color:var(--text-sub); }
@@ -499,11 +501,47 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
     function fmtDateTime(d) {
       return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     }
-    /* 通信できなかった理由の見立て（庁内プロキシ・フィルタ環境を想定） */
+    /* このページがどう開かれているか。
+       iOSのChrome/Edgeはローカルファイルを chrome://external-file・edge://external-file という
+       内部スキームで開き、そこからの外部通信（fetch・iframe）を一律ブロックする。
+       このときは待たずに理由を出す。 */
+    function scheme() {
+      var over = window.__CUE_SCHEME__;                     // 動作確認用の上書き
+      if (over === 'web' || over === 'file' || over === 'app') return over;
+      // blob:http://… （生成ツールのプレビュー）は中身のスキームで判定する
+      var href = location.href.replace(/^blob:/, '');
+      if (/^https?:/i.test(href)) return 'web';
+      if (/^file:/i.test(href)) return 'file';
+      return 'app';
+    }
+
+    function localSchemeNote() {
+      return 'このページは端末内のファイル（' + esc(location.protocol) + '）として開かれています。' +
+        'iOSのChrome／Edgeはこの状態での外部通信を禁止しているため、天気と地図は表示できません。' +
+        'オンラインのURLから開くと表示されます（キューシートの表示・ETA・距離補正はこのままで使えます）。';
+    }
+
+    /* 通信できなかった理由の見立て */
     function netHint(err) {
+      if (scheme() === 'app') return localSchemeNote();
       if (navigator.onLine === false) return 'この端末は現在オフラインです。';
-      if (err && err.name === 'AbortError') return '応答がありませんでした（タイムアウト）。組織のプロキシ／フィルタでブロックされている可能性があります。';
-      return 'オフラインか、組織のプロキシ／フィルタでブロックされている可能性があります。';
+      var tail = (scheme() === 'file')
+        ? 'ローカルファイルとして開いているため、ブラウザ側で外部通信が制限されている可能性もあります。' : '';
+      if (err && err.name === 'AbortError') {
+        return '応答がありませんでした（タイムアウト）。組織のプロキシ／フィルタでブロックされている可能性があります。' + tail;
+      }
+      return 'オフラインか、組織のプロキシ／フィルタでブロックされている可能性があります。' + tail;
+    }
+
+    /* 地図アプリへのリンク（埋め込み地図が出せないときの逃げ道にもなる） */
+    function mapLinksHtml(lat, lon) {
+      return '<div class="wx-map-links">' +
+        '<a href="https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon + '#map=18/' + lat + '/' + lon +
+          '" target="_blank" rel="noopener">OpenStreetMap ↗</a>' +
+        '<a href="https://maps.apple.com/?q=' + lat + ',' + lon + '" target="_blank" rel="noopener">マップ（Apple）↗</a>' +
+        '<a href="https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lon +
+          '" target="_blank" rel="noopener">Googleマップ ↗</a>' +
+        '</div>';
     }
     function fetchWithTimeout(url, ms, opt) {
       var ctl = new AbortController();
@@ -523,12 +561,18 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
       var mapUrl = 'https://www.openstreetmap.org/export/embed.html?bbox=' +
         (lon - 0.0025) + '%2C' + (lat - 0.0015) + '%2C' + (lon + 0.0025) + '%2C' + (lat + 0.0015) +
         '&layer=mapnik&marker=' + lat + '%2C' + lon;
-      var linkUrl = 'https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon + '#map=18/' + lat + '/' + lon;
+      if (scheme() === 'app') {
+        // 埋め込み地図は確実に空になるので出さず、地図アプリへのリンクを案内する
+        panel.innerHTML =
+          '<div class="wx-net-note">📱 ' + localSchemeNote() + '</div>' +
+          mapLinksHtml(lat, lon);
+        return;
+      }
       panel.innerHTML =
         '<div class="wx-body"></div>' +
         '<div class="wx-map-frame"><iframe loading="lazy" src="' + mapUrl + '"></iframe></div>' +
         '<div class="wx-net-note" hidden></div>' +
-        '<a class="wx-map-link" href="' + linkUrl + '" target="_blank" rel="noopener">大きな地図で開く ↗</a>';
+        mapLinksHtml(lat, lon);
       probeMap(panel, mapUrl);
       loadWeather(panel, lat, lon, brg, dist);
     }
