@@ -160,6 +160,12 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
 .wx-map-frame { width:100%; height:220px; border-radius:12px; overflow:hidden; border:1px solid var(--border-color); }
 .wx-map-frame iframe { width:100%; height:100%; border:none; }
 .wx-map-link { display:block; text-align:center; font-size:15px; color:var(--accent-blue); margin-top:8px; font-weight:700; }
+.wx-static-map { position:relative; overflow:hidden; border-radius:12px; border:1px solid var(--border-color); margin:0 auto; max-width:100%; }
+.wx-static-map img { position:absolute; width:256px; height:256px; }
+.wx-static-pin { position:absolute; left:50%; top:50%; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%; background:#ff3b30; border:3px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.35); }
+.wx-attr { font-size:11px; color:var(--text-sub); text-align:center; margin-top:5px; }
+.wx-stamp { font-size:11px; color:var(--text-sub); text-align:center; margin:-4px 0 8px; }
+@media (prefers-color-scheme: dark) { .wx-static-map img { filter:invert(.92) hue-rotate(180deg) brightness(1.05) contrast(.95); } }
 .wx-map-links { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:10px; }
 .wx-map-links a { flex:1; min-width:120px; text-align:center; background:var(--bg-card-alt); color:var(--accent-blue); border-radius:10px; padding:10px 8px; font-size:14px; font-weight:700; text-decoration:none; }
 .wx-outofrange { font-size:14px; color:var(--accent-gold); background:var(--bg-card-alt); border-radius:10px; padding:12px; text-align:center; font-weight:700; margin-bottom:10px; line-height:1.5; }
@@ -375,7 +381,7 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
       DATA.cues.forEach(function (c, i) {
         var uid = 'q' + i;
         var wx = '<div class="wx-toggle-row"><button class="wx-toggle-btn" data-wx="' + uid + '">🌤 天気・地図</button></div>' +
-                 '<div class="wx-panel" id="wx-' + uid + '" data-lat="' + c.lat + '" data-lon="' + c.lon + '" data-brg="' + (c.bearing || 0) + '" data-dist="' + c.distKm + '"></div>';
+                 '<div class="wx-panel" id="wx-' + uid + '" data-uid="' + uid + '" data-lat="' + c.lat + '" data-lon="' + c.lon + '" data-brg="' + (c.bearing || 0) + '" data-dist="' + c.distKm + '"></div>';
         if (c.kind === 'turn') {
           var sig = c.signal === true ? '<div class="turn-signal sig-green">●</div>'
                   : (c.signal === false ? '<div class="turn-signal sig-none">×</div>' : '');
@@ -554,26 +560,88 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
       );
     }
 
+    /* 生成時に焼き込んだデータ（オフライン用） */
+    function offlineMap() { return DATA.offline && DATA.offline.map; }
+    function offlineWx() { return DATA.offline && DATA.offline.wx; }
+
+    /** 埋め込みタイルを並べて静止地図を作る（通信不要） */
+    function staticMapHtml(uid) {
+      var m = offlineMap();
+      if (!m || !m.layout || !m.layout[uid]) return '';
+      var L = m.layout[uid], W = m.w, H = m.h;
+      var left = L.cx - W / 2, top = L.cy - H / 2;
+      var x0 = Math.floor(left / 256), x1 = Math.floor((left + W - 1) / 256);
+      var y0 = Math.floor(top / 256), y1 = Math.floor((top + H - 1) / 256);
+      var imgs = '', got = 0;
+      for (var x = x0; x <= x1; x++) {
+        for (var y = y0; y <= y1; y++) {
+          var d = m.tiles[L.z + '/' + x + '/' + y];
+          if (!d) continue;
+          got++;
+          imgs += '<img alt="" src="' + d + '" style="left:' + Math.round(x * 256 - left) + 'px;top:' + Math.round(y * 256 - top) + 'px">';
+        }
+      }
+      if (!got) return '';
+      return '<div class="wx-static-map" style="width:' + W + 'px;height:' + H + 'px">' + imgs +
+        '<div class="wx-static-pin"></div></div>' +
+        '<div class="wx-attr">' + esc(m.attr || '') + '</div>';
+    }
+
+    /** 埋め込み予報から、その地点・その時刻に一番近い値を取り出す */
+    function embeddedWeatherAt(lat, lon, eta) {
+      var w = offlineWx();
+      if (!w || !w.points || !w.points.length) return null;
+      var best = null, bd = Infinity;
+      w.points.forEach(function (p) {
+        var dy = p.lat - lat, dx = (p.lon - lon) * Math.cos(lat * Math.PI / 180);
+        var d = dy * dy + dx * dx;
+        if (d < bd) { bd = d; best = p; }
+      });
+      var target = eta.getFullYear() + '-' + pad2(eta.getMonth() + 1) + '-' + pad2(eta.getDate()) + 'T' + pad2(eta.getHours());
+      var idx = w.time.indexOf(target + ':00');
+      if (idx === -1) idx = w.time.findIndex(function (t) { return t.slice(0, 13) === target; });
+      if (idx === -1 || best.t[idx] == null) return null;
+      return { temp: best.t[idx], rain: best.p[idx], ws: best.ws[idx], wd: best.wd[idx], fetchedAt: w.fetchedAt };
+    }
+
+    function renderWxCard(body, v, eta, brg, stamp) {
+      var rel = windRelation(brg, v.wd), info = relationLabel(rel);
+      body.innerHTML =
+        '<div class="wx-weather-card">' +
+          '<div class="wx-wind-arrow ' + rel + '"><span class="arrow-icon">' + info.icon + '</span>' +
+          '<span class="arrow-label">' + info.label + '</span></div>' +
+          '<div class="wx-details">' +
+            '<div class="wx-item"><span class="wx-label">ETA</span><span class="wx-value">' + fmtDateTime(eta) + '</span></div>' +
+            '<div class="wx-item"><span class="wx-label">気温</span><span class="wx-value">' + v.temp.toFixed(1) + '℃</span></div>' +
+            '<div class="wx-item"><span class="wx-label">風</span><span class="wx-value">' + bearingToCompass(v.wd) + ' ' + v.ws.toFixed(1) + 'm/s</span></div>' +
+            '<div class="wx-item"><span class="wx-label">降水量</span><span class="wx-value' + (v.rain > 0 ? ' rain-warn' : '') + '">' + v.rain.toFixed(1) + 'mm/h</span></div>' +
+          '</div>' +
+        '</div>' +
+        (stamp ? '<div class="wx-stamp">' + esc(stamp) + '</div>' : '');
+    }
+
     function loadWx(panel) {
       var lat = parseFloat(panel.dataset.lat), lon = parseFloat(panel.dataset.lon);
       var brg = parseFloat(panel.dataset.brg || '0');
       var dist = parseFloat(panel.dataset.dist || '0');
-      var mapUrl = 'https://www.openstreetmap.org/export/embed.html?bbox=' +
-        (lon - 0.0025) + '%2C' + (lat - 0.0015) + '%2C' + (lon + 0.0025) + '%2C' + (lat + 0.0015) +
-        '&layer=mapnik&marker=' + lat + '%2C' + lon;
-      if (scheme() === 'app') {
-        // 埋め込み地図は確実に空になるので出さず、地図アプリへのリンクを案内する
-        panel.innerHTML =
-          '<div class="wx-net-note">📱 ' + localSchemeNote() + '</div>' +
-          mapLinksHtml(lat, lon);
-        return;
+      var uid = panel.dataset.uid;
+      var mapHtml = staticMapHtml(uid);
+
+      if (mapHtml) {
+        // 焼き込んだ地図なら通信不要
+        panel.innerHTML = '<div class="wx-body"></div>' + mapHtml + mapLinksHtml(lat, lon);
+      } else if (scheme() === 'app') {
+        panel.innerHTML = '<div class="wx-body"></div>' +
+          '<div class="wx-net-note">📱 ' + localSchemeNote() + '</div>' + mapLinksHtml(lat, lon);
+      } else {
+        var mapUrl = 'https://www.openstreetmap.org/export/embed.html?bbox=' +
+          (lon - 0.0025) + '%2C' + (lat - 0.0015) + '%2C' + (lon + 0.0025) + '%2C' + (lat + 0.0015) +
+          '&layer=mapnik&marker=' + lat + '%2C' + lon;
+        panel.innerHTML = '<div class="wx-body"></div>' +
+          '<div class="wx-map-frame"><iframe loading="lazy" src="' + mapUrl + '"></iframe></div>' +
+          '<div class="wx-net-note" hidden></div>' + mapLinksHtml(lat, lon);
+        probeMap(panel, mapUrl);
       }
-      panel.innerHTML =
-        '<div class="wx-body"></div>' +
-        '<div class="wx-map-frame"><iframe loading="lazy" src="' + mapUrl + '"></iframe></div>' +
-        '<div class="wx-net-note" hidden></div>' +
-        mapLinksHtml(lat, lon);
-      probeMap(panel, mapUrl);
       loadWeather(panel, lat, lon, brg, dist);
     }
 
@@ -581,22 +649,34 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
        同じURLへの到達性だけ確かめて、駄目そうなら理由を書き添える */
     function probeMap(panel, url) {
       var note = panel.querySelector('.wx-net-note');
+      if (!note) return;
       fetchWithTimeout(url, 10000, { mode: 'no-cors' }).catch(function (e) {
         note.hidden = false;
         note.innerHTML = '🗺 地図（openstreetmap.org）への接続を確認できませんでした。' +
-          '上に地図が表示されていれば問題ありません。<br>' + esc(netHint(e)) +
-          '<br>地図はオンラインのときだけ表示されます（キューシート本体はオフラインで見られます）。';
+          '上に地図が表示されていれば問題ありません。<br>' + esc(netHint(e));
       });
     }
 
     function loadWeather(panel, lat, lon, brg, dist) {
       var body = panel.querySelector('.wx-body');
+      if (!body) return;
       var start = startDateTime();
       if (!start) { body.innerHTML = '<div class="wx-error">出走日時を設定してください</div>'; return; }
 
       var eta = new Date(start.getTime() + etaMinForDist(dist) * 60000);
+      var emb = embeddedWeatherAt(lat, lon, eta);
+      var embStamp = emb ? '埋め込み予報（' + fmtDateTime(new Date(emb.fetchedAt)) + '取得）' : '';
+
+      // 端末内ファイルとして開いている（iOS）＝通信できないので、焼き込んだ予報を使う
+      if (scheme() === 'app') {
+        if (emb) return renderWxCard(body, emb, eta, brg, embStamp);
+        body.innerHTML = '<div class="wx-net-note">📱 ' + localSchemeNote() + '</div>';
+        return;
+      }
+
       var diffDays = (eta - new Date()) / 86400000;
       if (diffDays < -0.5 || diffDays > 16) {
+        if (emb) return renderWxCard(body, emb, eta, brg, embStamp);
         body.innerHTML = '<div class="wx-outofrange">⚠️ 通過予定 ' + fmtDateTime(eta) +
           ' は天気予報の範囲外です<br>予報は本日から概ね16日先まで（Open-Meteoの仕様）。開催が近づくと表示されます。</div>';
         return;
@@ -623,21 +703,15 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
             return Math.abs(new Date(t) - eta) < Math.abs(new Date(times[best]) - eta) ? i : best;
           }, 0);
         }
-        var temp = data.hourly.temperature_2m[idx], rain = data.hourly.precipitation[idx];
-        var ws = data.hourly.windspeed_10m[idx], wd = data.hourly.winddirection_10m[idx];
-        var rel = windRelation(brg, wd), info = relationLabel(rel);
-        body.innerHTML =
-          '<div class="wx-weather-card">' +
-            '<div class="wx-wind-arrow ' + rel + '"><span class="arrow-icon">' + info.icon + '</span>' +
-            '<span class="arrow-label">' + info.label + '</span></div>' +
-            '<div class="wx-details">' +
-              '<div class="wx-item"><span class="wx-label">ETA</span><span class="wx-value">' + fmtDateTime(eta) + '</span></div>' +
-              '<div class="wx-item"><span class="wx-label">気温</span><span class="wx-value">' + temp.toFixed(1) + '℃</span></div>' +
-              '<div class="wx-item"><span class="wx-label">風</span><span class="wx-value">' + bearingToCompass(wd) + ' ' + ws.toFixed(1) + 'm/s</span></div>' +
-              '<div class="wx-item"><span class="wx-label">降水量</span><span class="wx-value' + (rain > 0 ? ' rain-warn' : '') + '">' + rain.toFixed(1) + 'mm/h</span></div>' +
-            '</div>' +
-          '</div>';
+        renderWxCard(body, {
+          temp: data.hourly.temperature_2m[idx], rain: data.hourly.precipitation[idx],
+          ws: data.hourly.windspeed_10m[idx], wd: data.hourly.winddirection_10m[idx]
+        }, eta, brg, '');
       }).catch(function (e) {
+        if (emb) {
+          renderWxCard(body, emb, eta, brg, embStamp + '／通信できないため埋め込み分を表示');
+          return;
+        }
         body.innerHTML =
           '<div class="wx-error">天気を取得できませんでした' +
             '<span class="wx-sub">' + esc(netHint(e)) + '<br>接続先：api.open-meteo.com</span></div>' +
@@ -706,6 +780,7 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
           lat: round6(c.lat), lon: round6(c.lon), bearing: round1(c.bearing || 0)
         };
       }),
+      offline: model.offline || null,
       cues: model.cues.map(function (c) {
         var o = {
           kind: c.kind, distKm: round1(c.distKm),
