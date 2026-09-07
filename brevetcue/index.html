@@ -93,14 +93,22 @@
       </label>
       <label>地図画像の埋め込み（地理院タイル）
         <select id="opt-embed-map">
-          <option value="cp">CPのみ（推奨）</option>
-          <option value="all">全地点（ファイルが大きくなります）</option>
-          <option value="none">埋め込まない</option>
+          <option value="cp">CPのみ（軽い・1MB前後）</option>
+          <option value="all">全地点（曲がり角にも地図。数MBになります）</option>
+          <option value="none">埋め込まない（ルート略図のみ）</option>
+        </select>
+      </label>
+      <label>地図の詳しさ
+        <select id="opt-embed-zoom">
+          <option value="17">拡大（z17・交差点の形まで）</option>
+          <option value="16" selected>標準（z16）</option>
+          <option value="15">広め（z15・タイル共有が増え軽い）</option>
         </select>
       </label>
     </div>
     <p class="note" id="autoturn-note">※自動抽出は「進路とアイコンのみ」の簡易な詳細版になります（道路名・ランドマークはExcelの記述が必要です）。</p>
-    <p class="note">※iPhoneのChrome／Edgeで端末内のファイルを開くと外部通信ができません。天気・地図を埋め込んでおくと、その状態でも表示できます（開催16日前から埋め込み可）。</p>
+    <p class="note">※iPhoneのChrome／Edgeで端末内のファイルを開くと外部通信ができません。天気・地図を埋め込んでおくと、その状態でも表示できます（開催16日前から埋め込み可）。<br>
+    ※GPXから起こした「ルート略図」（曲がり角の形・進む向き・縮尺）は全地点に必ず入ります（数十KB）。地図画像を入れない地点でも、これで進路は判断できます。</p>
     <div class="row-actions">
       <button class="btn primary" id="btn-generate">キューシートを生成する</button>
     </div>

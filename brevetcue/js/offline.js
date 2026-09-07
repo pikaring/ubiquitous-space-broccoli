@@ -139,8 +139,37 @@
     return Promise.all(workers).then(function () { return { tiles: tiles, failed: failed }; });
   }
 
+  /* ---------- ルート略図（GPXの線形をその場で描く。タイル不要・極小） ---------- */
+
+  /**
+   * 各地点の前後halfMメートルのコース形状を、地図と同じ座標系（zの世界ピクセル）の
+   * 相対座標で書き出す。1地点あたり数百バイト。
+   */
+  function buildSketches(track, targets, z, halfM, stepM) {
+    var half = halfM || 250, step = stepM || 20;
+    var totalM = track.cum[track.cum.length - 1];
+    var paths = {};
+    targets.forEach(function (t) {
+      if (t.gpxKm == null || t.lat == null) return;
+      var cx = lonToWorldX(t.lon, z), cy = latToWorldY(t.lat, z);
+      var center = t.gpxKm * 1000;
+      var pts = [];
+      for (var d = center - half; d <= center + half; d += step) {
+        if (d < 0 || d > totalM) continue;
+        var p = NS.gpx.locateAtKm(track, d / 1000);
+        pts.push([
+          Math.round((lonToWorldX(p.lon, z) - cx) * 10) / 10,
+          Math.round((latToWorldY(p.lat, z) - cy) * 10) / 10
+        ]);
+      }
+      if (pts.length > 1) paths[t.id] = pts;
+    });
+    return paths;
+  }
+
   NS.offline = {
     sampleWeatherPoints: sampleWeatherPoints,
+    buildSketches: buildSketches,
     fetchWeather: fetchWeather,
     planTiles: planTiles,
     fetchTiles: fetchTiles,

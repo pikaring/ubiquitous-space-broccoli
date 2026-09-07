@@ -164,6 +164,15 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
 .wx-static-map img { position:absolute; width:256px; height:256px; }
 .wx-static-pin { position:absolute; left:50%; top:50%; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%; background:#ff3b30; border:3px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.35); }
 .wx-attr { font-size:11px; color:var(--text-sub); text-align:center; margin-top:5px; }
+.wx-sketch { position:relative; overflow:hidden; border-radius:12px; border:1px solid var(--border-color); margin:0 auto; background:var(--bg-card-alt); max-width:100%; }
+.wx-sketch-svg { position:absolute; left:0; top:0; }
+.rt-outline { fill:none; stroke:#fff; stroke-width:7; stroke-linecap:round; stroke-linejoin:round; opacity:.9; }
+.rt-in { fill:none; stroke:#8e8e93; stroke-width:3.5; stroke-linecap:round; stroke-linejoin:round; }
+.rt-out { fill:none; stroke:#ff3b30; stroke-width:3.5; stroke-linecap:round; stroke-linejoin:round; }
+.rt-arrow { fill:#ff3b30; stroke:#fff; stroke-width:1.2; }
+.rt-north { fill:var(--text-sub); font-size:11px; font-weight:700; }
+.rt-scale line { stroke:var(--text-main); stroke-width:1.5; opacity:.75; }
+.rt-scale text { fill:var(--text-main); font-size:10px; font-weight:700; opacity:.85; }
 .wx-stamp { font-size:11px; color:var(--text-sub); text-align:center; margin:-4px 0 8px; }
 @media (prefers-color-scheme: dark) { .wx-static-map img { filter:invert(.92) hue-rotate(180deg) brightness(1.05) contrast(.95); } }
 .wx-map-links { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:10px; }
@@ -564,8 +573,65 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
     function offlineMap() { return DATA.offline && DATA.offline.map; }
     function offlineWx() { return DATA.offline && DATA.offline.wx; }
 
+    /** GPXの線形から起こしたルート略図（SVG・通信不要・数百バイト）
+     *  fit=true で枠に収まるよう拡大縮小する（タイルに重ねるときは等倍のまま） */
+    function sketchSvg(uid, W, H, lat, fit) {
+      var sk = DATA.offline && DATA.offline.sketch;
+      if (!sk || !sk.paths || !sk.paths[uid]) return '';
+      var pts = sk.paths[uid];
+      if (pts.length < 2) return '';
+
+      var k = 1;
+      if (fit) {
+        var mx = 0, my = 0;
+        pts.forEach(function (p) { mx = Math.max(mx, Math.abs(p[0])); my = Math.max(my, Math.abs(p[1])); });
+        k = Math.min((W / 2 - 14) / (mx || 1), (H / 2 - 14) / (my || 1));
+        k = Math.max(0.15, Math.min(k, 3));
+      }
+      var ci = 0, best = Infinity;
+      pts.forEach(function (p, i) {
+        var d = p[0] * p[0] + p[1] * p[1];
+        if (d < best) { best = d; ci = i; }
+      });
+      function path(list) {
+        return list.map(function (p, i) {
+          return (i ? 'L' : 'M') + (W / 2 + p[0] * k).toFixed(1) + ' ' + (H / 2 + p[1] * k).toFixed(1);
+        }).join(' ');
+      }
+      var dIn = path(pts.slice(0, ci + 1)), dOut = path(pts.slice(ci));
+
+      // 進行方向の矢印（終点の向き）
+      var a = pts[pts.length - 2], b = pts[pts.length - 1];
+      var ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      var ax = W / 2 + b[0] * k, ay = H / 2 + b[1] * k, L = 11, wA = 6;
+      var arrow = '<polygon class="rt-arrow" points="' +
+        (ax).toFixed(1) + ',' + (ay).toFixed(1) + ' ' +
+        (ax - L * Math.cos(ang) + wA * Math.sin(ang)).toFixed(1) + ',' + (ay - L * Math.sin(ang) - wA * Math.cos(ang)).toFixed(1) + ' ' +
+        (ax - L * Math.cos(ang) - wA * Math.sin(ang)).toFixed(1) + ',' + (ay - L * Math.sin(ang) + wA * Math.cos(ang)).toFixed(1) + '"/>';
+
+      // 縮尺バー（この地点の緯度から1pxあたりの距離を求める）
+      var bar = '';
+      var mPerPx = 156543.03392 * Math.cos((lat || 35) * Math.PI / 180) / Math.pow(2, sk.z) / k;
+      var cand = [25, 50, 100, 200, 500, 1000];
+      for (var i = 0; i < cand.length; i++) {
+        var px = cand[i] / mPerPx;
+        if (px >= 40 && px <= W * 0.5) {
+          bar = '<g class="rt-scale"><line x1="10" y1="' + (H - 12) + '" x2="' + (10 + px).toFixed(1) + '" y2="' + (H - 12) + '"/>' +
+            '<line x1="10" y1="' + (H - 16) + '" x2="10" y2="' + (H - 8) + '"/>' +
+            '<line x1="' + (10 + px).toFixed(1) + '" y1="' + (H - 16) + '" x2="' + (10 + px).toFixed(1) + '" y2="' + (H - 8) + '"/>' +
+            '<text x="' + (14 + px).toFixed(1) + '" y="' + (H - 8) + '">' + cand[i] + 'm</text></g>';
+          break;
+        }
+      }
+
+      return '<svg class="wx-sketch-svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' +
+        '<path class="rt-outline" d="' + dIn + '"/><path class="rt-outline" d="' + dOut + '"/>' +
+        '<path class="rt-in" d="' + dIn + '"/><path class="rt-out" d="' + dOut + '"/>' + arrow +
+        '<text class="rt-north" x="8" y="16">N↑</text>' + bar + '</svg>';
+    }
+
     /** 埋め込みタイルを並べて静止地図を作る（通信不要） */
-    function staticMapHtml(uid) {
+    function staticMapHtml(uid, lat) {
       var m = offlineMap();
       if (!m || !m.layout || !m.layout[uid]) return '';
       var L = m.layout[uid], W = m.w, H = m.h;
@@ -583,8 +649,18 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
       }
       if (!got) return '';
       return '<div class="wx-static-map" style="width:' + W + 'px;height:' + H + 'px">' + imgs +
+        sketchSvg(uid, W, H, lat, false) + '<div class="wx-static-pin"></div></div>' +
+        '<div class="wx-attr">' + esc(m.attr || '') + '（赤い線＝進む向き）</div>';
+    }
+
+    /** タイルが無い地点用：略図だけを描く */
+    function sketchBoxHtml(uid, lat) {
+      var W = (offlineMap() && offlineMap().w) || 320, H = (offlineMap() && offlineMap().h) || 192;
+      var svg = sketchSvg(uid, W, H, lat, true);
+      if (!svg) return '';
+      return '<div class="wx-sketch" style="width:' + W + 'px;height:' + H + 'px">' + svg +
         '<div class="wx-static-pin"></div></div>' +
-        '<div class="wx-attr">' + esc(m.attr || '') + '</div>';
+        '<div class="wx-attr">GPXから起こしたコースの形（北が上／灰＝手前、赤＝進む向き）</div>';
     }
 
     /** 埋め込み予報から、その地点・その時刻に一番近い値を取り出す */
@@ -625,22 +701,31 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
       var brg = parseFloat(panel.dataset.brg || '0');
       var dist = parseFloat(panel.dataset.dist || '0');
       var uid = panel.dataset.uid;
-      var mapHtml = staticMapHtml(uid);
+      var tiles = staticMapHtml(uid, lat);
+      var mapUrl = 'https://www.openstreetmap.org/export/embed.html?bbox=' +
+        (lon - 0.0025) + '%2C' + (lat - 0.0015) + '%2C' + (lon + 0.0025) + '%2C' + (lat + 0.0015) +
+        '&layer=mapnik&marker=' + lat + '%2C' + lon;
 
-      if (mapHtml) {
+      if (tiles) {
         // 焼き込んだ地図なら通信不要
-        panel.innerHTML = '<div class="wx-body"></div>' + mapHtml + mapLinksHtml(lat, lon);
-      } else if (scheme() === 'app') {
-        panel.innerHTML = '<div class="wx-body"></div>' +
-          '<div class="wx-net-note">📱 ' + localSchemeNote() + '</div>' + mapLinksHtml(lat, lon);
-      } else {
-        var mapUrl = 'https://www.openstreetmap.org/export/embed.html?bbox=' +
-          (lon - 0.0025) + '%2C' + (lat - 0.0015) + '%2C' + (lon + 0.0025) + '%2C' + (lat + 0.0015) +
-          '&layer=mapnik&marker=' + lat + '%2C' + lon;
+        panel.innerHTML = '<div class="wx-body"></div>' + tiles + mapLinksHtml(lat, lon);
+      } else if (scheme() === 'web') {
         panel.innerHTML = '<div class="wx-body"></div>' +
           '<div class="wx-map-frame"><iframe loading="lazy" src="' + mapUrl + '"></iframe></div>' +
           '<div class="wx-net-note" hidden></div>' + mapLinksHtml(lat, lon);
         probeMap(panel, mapUrl);
+      } else {
+        // 端末内のファイルとして開いている：まず略図を出し、通信できるようなら地図に差し替える
+        panel.innerHTML = '<div class="wx-body"></div>' +
+          '<div class="wx-mapslot">' + (sketchBoxHtml(uid, lat) ||
+            '<div class="wx-net-note">📱 ' + localSchemeNote() + '</div>') + '</div>' +
+          mapLinksHtml(lat, lon);
+        fetchWithTimeout(mapUrl, 8000, { mode: 'no-cors' }).then(function () {
+          var slot = panel.querySelector('.wx-mapslot');
+          if (slot) {
+            slot.innerHTML = '<div class="wx-map-frame"><iframe loading="lazy" src="' + mapUrl + '"></iframe></div>';
+          }
+        }).catch(function () { /* 略図のままにする */ });
       }
       loadWeather(panel, lat, lon, brg, dist);
     }
@@ -667,21 +752,23 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
       var emb = embeddedWeatherAt(lat, lon, eta);
       var embStamp = emb ? '埋め込み予報（' + fmtDateTime(new Date(emb.fetchedAt)) + '取得）' : '';
 
-      // 端末内ファイルとして開いている（iOS）＝通信できないので、焼き込んだ予報を使う
-      if (scheme() === 'app') {
-        if (emb) return renderWxCard(body, emb, eta, brg, embStamp);
+      // 端末内ファイルとして開いている場合は待たせない。
+      // 埋め込み予報をすぐ出し、通信できる環境なら裏で最新に差し替える。
+      var offlineFirst = (scheme() !== 'web') && !!emb;
+      if (offlineFirst) renderWxCard(body, emb, eta, brg, embStamp);
+      if (scheme() === 'app' && !emb) {
         body.innerHTML = '<div class="wx-net-note">📱 ' + localSchemeNote() + '</div>';
         return;
       }
 
       var diffDays = (eta - new Date()) / 86400000;
       if (diffDays < -0.5 || diffDays > 16) {
-        if (emb) return renderWxCard(body, emb, eta, brg, embStamp);
+        if (emb) { renderWxCard(body, emb, eta, brg, embStamp); return; }
         body.innerHTML = '<div class="wx-outofrange">⚠️ 通過予定 ' + fmtDateTime(eta) +
           ' は天気予報の範囲外です<br>予報は本日から概ね16日先まで（Open-Meteoの仕様）。開催が近づくと表示されます。</div>';
         return;
       }
-      body.innerHTML = '<div class="wx-loading">天気を取得中…</div>';
+      if (!offlineFirst) body.innerHTML = '<div class="wx-loading">天気を取得中…</div>';
 
       var key = lat.toFixed(2) + ',' + lon.toFixed(2);
       var p = wxCache[key];
@@ -709,7 +796,8 @@ input[type=date], input[type=time] { background:var(--bg-card-alt); color:var(--
         }, eta, brg, '');
       }).catch(function (e) {
         if (emb) {
-          renderWxCard(body, emb, eta, brg, embStamp + '／通信できないため埋め込み分を表示');
+          // すでに埋め込み分を表示済みならそのまま
+          if (!offlineFirst) renderWxCard(body, emb, eta, brg, embStamp + '／通信できないため埋め込み分を表示');
           return;
         }
         body.innerHTML =

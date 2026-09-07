@@ -323,13 +323,23 @@
       );
     }
 
+    // ルート略図は全地点ぶん入れても数十KBなので常に埋め込む（地図タイルと同じ縮尺で描く）
+    var mapZoom = parseInt($('opt-embed-zoom').value, 10) || 16;
+    var sketchTargets = model.cues.map(function (c, i) {
+      return { id: 'q' + i, lat: c.lat, lon: c.lon, gpxKm: c.gpxKm };
+    });
+    offline.sketch = {
+      z: mapZoom,
+      paths: NS.offline.buildSketches(state.track, sketchTargets, mapZoom, 250, 20)
+    };
+
     if (opt.embedMap && opt.embedMap !== 'none') {
       var targets = model.cues.map(function (c, i) {
         return { id: 'q' + i, lat: c.lat, lon: c.lon, kind: c.kind };
       }).filter(function (t) {
         return t.lat != null && (opt.embedMap === 'all' || t.kind !== 'turn');
       });
-      var plan = NS.offline.planTiles(targets, 16);
+      var plan = NS.offline.planTiles(targets, mapZoom);
       if (plan.outside) notes.push('日本国外の' + plan.outside + '地点は地図を埋め込めませんでした（地理院タイルの範囲外）。');
       if (plan.keys.length) {
         progress('地図タイルを取得しています… 0/' + plan.keys.length);
@@ -347,9 +357,9 @@
       }
     }
 
+    model.offline = offline;
     if (!jobs.length) return Promise.resolve();
     return Promise.all(jobs).then(function () {
-      model.offline = offline;
       progress('HTMLを組み立てています…');
     });
   }
@@ -363,6 +373,7 @@
     var extra = [];
     if (off.wx) extra.push('天気' + off.wx.points.length + '地点×' + off.wx.time.length + '時間を埋め込み');
     if (off.map) extra.push('地図' + Object.keys(off.map.tiles).length + 'タイルを埋め込み');
+    if (off.sketch) extra.push('ルート略図' + Object.keys(off.sketch.paths).length + '地点');
     var size = blob.size >= 1048576 ? (blob.size / 1048576).toFixed(1) + ' MB' : (blob.size / 1024).toFixed(0) + ' KB';
     $('filesize').textContent = '生成サイズ ' + size + ' / ' +
       state.model.cps.length + 'CP・' + state.model.cues.length + '行' +
