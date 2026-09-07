@@ -287,7 +287,9 @@ await f2.locator('#cp-list .cp-item').first().waitFor();
 const cp2 = await f2.locator('#cp-list .cp-item').count();
 check('GPXのウェイポイントからCPを構成する', cp2 === 6, `${cp2}件`);
 const close2 = await f2.locator('#cp-list .chip-close').last().textContent();
-check('ACP基準のCloseが入る', /Close(翌)?\d{2}:\d{2}/.test(close2.replace(/\s/g, '')), close2.replace(/\s+/g, ''));
+check('ACP基準のCloseは「推定」と分かるように出す',
+  /Close（推定）(翌)?\d{2}:\d{2}/.test(close2.replace(/\s/g, '')) &&
+  await f2.locator('#cp-list .chip-close.est').count() > 0, close2.replace(/\s+/g, ''));
 await f2.locator('nav button[data-view="detail"]').click();
 const autoTurns = await f2.locator('#cue-list .turn-arrow').count();
 check('GPXから曲がり角を自動抽出する', autoTurns >= 40 && autoTurns <= 70, `${autoTurns}個`);
@@ -389,12 +391,58 @@ check('道標欄のCP名からラベルと店名を取り出す',
   cpTitles.length === 6 && /PC1[\s　]*デモマート東町店/.test(cpTitles[1]), cpTitles.join(' / '));
 const closes = await f4.locator('#cp-list .chip-close').allTextContents();
 check('主催者のOpen/Closeをそのまま使う',
-  closes.length === 6 && /18:30/.test(closes[0]) && /翌/.test(closes[5]), closes.map(t => t.replace(/\s/g, '')).join(' / '));
+  closes.length === 6 && /18:30/.test(closes[0]) && /翌/.test(closes[5]) &&
+  await f4.locator('#cp-list .chip-close.est').count() === 0,
+  closes.map(t => t.replace(/\s/g, '')).join(' / '));
 
 await f4.locator('nav button[data-view="detail"]').click();
 const signText = await f4.locator('#cue-list .turn-landmark').first().textContent();
 check('道標を「道標「…」」として表示する', /道標「/.test(signText), signText.trim());
 await page4.close();
+
+/* ====== シナリオ5：進行方向が矢印、時刻が備考欄の文中（別の主催者の型） ====== */
+const page5 = await browser.newPage({ viewport: { width: 430, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
+page5.on('pageerror', e => errors.push('pageerror(arrow): ' + e.message));
+page5.on('console', m => {
+  if (m.type() === 'error' && !isNetError(m.text())) errors.push('console(arrow): ' + m.text());
+});
+await page5.route('**cyberjapandata.gsi.go.jp/**', route => route.abort());
+await page5.route('**/api.open-meteo.com/**', route => route.abort());
+await page5.goto(base, { waitUntil: 'load' });
+await page5.setInputFiles('#file-gpx', path.join(root, 'samples/demo.gpx'));
+await page5.setInputFiles('#file-xlsx', path.join(root, 'samples/demo-arrow-notes.xlsx'));
+await page5.waitForSelector('#step2:not(.hidden)');
+const map5 = await page5.$$eval('#sheets select[data-col]', els =>
+  Object.fromEntries(els.map(e => [e.dataset.col, e.value])));
+check('総距離／区間距離／交差点の列を見分ける',
+  map5.dist === '1' && map5.segDist === '2' && map5.cross === '4' && map5.note === '7', JSON.stringify(map5));
+
+await page5.fill('#opt-date', '2026-10-10');
+await page5.selectOption('#opt-embed-map', 'none');
+await page5.click('#btn-generate');
+await page5.waitForSelector('#step4:not(.hidden)', { timeout: 60000 });
+const warn5 = await page5.isHidden('#gen-error') ? '' : await page5.textContent('#gen-error');
+check('備考欄の文中からCPと時刻を読むのでACP推定にならない',
+  !/ACP基準/.test(warn5) && !/ウェイポイント/.test(warn5), warn5.replace(/\n/g, ' ').slice(0, 60) || '警告なし');
+
+const f5 = page5.frameLocator('#preview');
+await f5.locator('#cp-list .cp-item').first().waitFor();
+const t5 = await f5.locator('#cp-list .cp-title').allTextContents();
+check('「左側　PC1  店名」からCP名を取り出す',
+  t5.length === 6 && /PC1[\s　]*デモマート東町店/.test(t5[1]) && !/左側/.test(t5[1]), t5.slice(0, 3).join(' / '));
+const o5 = (await f5.locator('#cp-list .chip-open').allTextContents()).map(t => t.replace(/\s/g, ''));
+check('「OPEN 18：48/CLOSE 19：49」形式の時刻を読む',
+  /Open18:48/.test(o5[1]) && await f5.locator('#cp-list .chip-open.est').count() === 0, o5.slice(0, 3).join(' / '));
+
+await f5.locator('nav button[data-view="detail"]').click();
+const arrows5 = await f5.locator('#cue-list .turn-arrow').allTextContents();
+check('矢印記号から進路を判定する',
+  arrows5.filter(a => a === '→').length > 5 && arrows5.filter(a => a === '←').length > 5,
+  `→${arrows5.filter(a => a === '→').length} ←${arrows5.filter(a => a === '←').length} ↑${arrows5.filter(a => a === '↑').length}`);
+check('交差点の形を表示する', await f5.locator('#cue-list .turn-cross').count() > 20,
+  await f5.locator('#cue-list .turn-cross').first().textContent());
+check('信号◎を「信号あり」と読む', await f5.locator('#cue-list .sig-green').count() > 0);
+await page5.close();
 
 check('JSエラーが発生しない', errors.length === 0, errors.join(' | '));
 

@@ -17,8 +17,10 @@
     { key: 'close',     label: 'Close',      kw: ['close', 'クローズ', '閉', '制限', 'ｸﾛｰｽﾞ', 'クローズ時刻'] },
     { key: 'direction', label: '進路',       kw: ['進路', '方向', '進行', '曲がる', '右左折', 'ターン', 'turn'] },
     { key: 'road',      label: '道路名',     kw: ['道路', '道路名', '経路', 'ルート', '路線', '道'] },
-    { key: 'sign',      label: '道標',       kw: ['道標', '青看板', '看板', '標識', '方面'] },
-    { key: 'landmark',  label: 'ランドマーク', kw: ['目印', 'ランドマーク', '目標', '交差点', '目標物'] },
+    { key: 'sign',      label: '道標',       kw: ['道標', '青看板', '看板', '標識', '方面'],
+      avoid: /備考|メモ|注意|コメント/ },
+    { key: 'cross',     label: '交差点の形',  kw: ['交差', '交差点', '形状'] },
+    { key: 'landmark',  label: 'ランドマーク', kw: ['目印', 'ランドマーク', '目標', '目標物'] },
     { key: 'signal',    label: '信号',       kw: ['信号', 'signal', '信号機'] },
     { key: 'note',      label: '備考',       kw: ['備考', '注意', 'コメント', 'メモ', '補足', '注記', 'remarks'] }
   ];
@@ -225,19 +227,54 @@
   /* ---------- 行のどこかにあるCP表記を拾う ---------- */
   // 「PC1 セイコーマート木古内」「通過C1海のプール入口」「START 元町公園前」など、
   // 主催者によっては地点名の列が無く、道標欄などにCP名が書かれている。
-  var CP_MARK = /^(start|goal|finish|ゴール|スタート|pc\s*\d*|cp\s*\d*|通過c\s*\d*|通過チェック\s*\d*|フォトチェック\s*\d*)[\s:：・]*(.*)$/i;
+  // 「左側　PC1  セブンイレブン…」のように前置きがある書式もあるため、
+  // 行頭に限定せず、語として独立しているCP表記を探す。
+  // PC/CPは番号付きのときだけ拾う（「PCを通過」のような文章に反応しないように）
+  var CP_MARK = /(^|[\s　\/／・（(【\[])(start|goal|finish|ゴール|スタート|pc\s*\d+|cp\s*\d+|通過c\s*\d*|通過チェック\s*\d*|フォトチェック\s*\d*)([\s　:：・]*)/i;
+
+  /** CP名の後ろに続く注記（レシート取得、OPEN…など）を落として地点名だけにする */
+  function trimCpName(text) {
+    var t = String(text || '').split(/[\r\n]/)[0];
+    t = U.normalizeText(t);
+    t = t.replace(/\s*[［\[（(]?\s*(参考\s*)?(open|close)[\s\S]*$/i, '');
+    t = t.replace(/\s*(レシート取得|写真を?撮影|目標物撮影|カード提示)[\s\S]*$/, '');
+    return t.trim();
+  }
+
+  /** 「OPEN 9：14/CLOSE 13：20」のような文中の時刻を拾う */
+  function parseTimesInText(text) {
+    if (!text) return { open: null, close: null };
+    var t = U.normalizeText(String(text).replace(/[\r\n]/g, ' '));
+    function pick(word) {
+      var m = t.match(new RegExp(word + '[^0-9]{0,6}(\\d{1,2})\\s*[:：時]\\s*(\\d{2})', 'i'));
+      return m ? { type: 'tod', minutes: parseInt(m[1], 10) * 60 + parseInt(m[2], 10) } : null;
+    }
+    return { open: pick('open'), close: pick('close') };
+  }
 
   function findCpCell(row) {
     for (var i = 0; i < row.length; i++) {
       var v = row[i];
       if (typeof v !== 'string') continue;
-      var t = U.normalizeText(v);
-      if (!t || t.length > 40) continue;
+      var raw = String(v);
+      var t = U.normalizeText(raw);
+      if (!t || t.length > 120) continue;
       var m = t.match(CP_MARK);
       if (!m) continue;
-      var kind = detectKind(m[1], '');
+      var kind = detectKind(m[2], '');
       if (!kind) continue;
-      return { col: i, text: t, marker: m[1].trim(), name: (m[2] || '').trim() };
+      var rest = t.slice(m.index + m[0].length);
+      var name = trimCpName(rest);
+      var after = name ? rest.slice(rest.indexOf(name) + name.length).trim() : rest;
+      // 時刻はチップで表示するので、備考からは「［参考 OPEN…/CLOSE…］」を取り除く
+      after = after.replace(/[［\[（(]?\s*(参考)?\s*open[^）)］\]]*?(close[^）)］\]]*)?[）)］\]]?\s*$/i, '').trim();
+      return {
+        col: i, text: t, raw: raw,
+        marker: m[2].trim(),
+        name: name,
+        after: after,                      // 「レシート取得 ［参考 OPEN…］」など
+        times: parseTimesInText(raw)
+      };
     }
     return null;
   }
