@@ -82,6 +82,7 @@ static int s_r_sand;      // the sand bed the ball ploughs
 static int s_ball_r, s_hub_r, s_tick_len, s_groove_w;
 static int s_hour_w, s_min_w;
 static GFont s_font_date;
+static bool s_font_custom;   // false if Cinzel failed and we fell back
 static GRect s_date_box;
 
 // current pattern
@@ -373,6 +374,12 @@ static void prv_window_load(Window *window) {
   const bool big = (w >= 240);
   s_font_date = fonts_load_custom_font(resource_get_handle(
       big ? RESOURCE_ID_FONT_CINZEL_18 : RESOURCE_ID_FONT_CINZEL_14));
+  s_font_custom = (s_font_date != NULL);
+  APP_LOG(APP_LOG_LEVEL_INFO, "ZenSand %dx%d: Cinzel %s", w, h,
+          s_font_custom ? "loaded" : "FAILED - drawing the date in the system font");
+  if (!s_font_custom) {
+    s_font_date = fonts_get_system_font(big ? FONT_KEY_GOTHIC_18 : FONT_KEY_GOTHIC_14);
+  }
   const int dw = big ? 84 : 66;
   const int dh = big ? 22 : 18;
   s_date_box = GRect(s_cx - dw / 2, s_cy + s_r_sand * 55 / 100, dw, dh);
@@ -401,7 +408,7 @@ static void prv_window_unload(Window *window) {
   }
   layer_destroy(s_sand_layer);
   gbitmap_destroy(s_canvas);
-  fonts_unload_custom_font(s_font_date);
+  if (s_font_custom) fonts_unload_custom_font(s_font_date);
 }
 
 static void prv_init(void) {
