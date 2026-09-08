@@ -13,7 +13,10 @@
     "capabilities": [],
     "targetPlatforms": [
       "diorite",
-      "emery"
+      "emery",
+      "chalk",
+      "flint",
+      "gabbro"
     ],
     "watchapp": {
       "watchface": true

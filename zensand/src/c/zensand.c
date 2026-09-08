@@ -17,6 +17,10 @@
 // mandala over the course of each minute. On the minute the sand is smoothed
 // flat and the ball starts a new pattern.
 //
+// The sand bed is the whole watch face: a disc as wide as the display, with a
+// graduated bezel around it. Time is analogue — hour and minute hands sweep
+// over the sand — so the only digital element is a small date.
+//
 // The grooves are accumulated in an off-screen GBitmap so the trail persists
 // without having to re-draw thousands of points every frame: each frame only
 // plots the short new arc, then blits the canvas.
@@ -67,24 +71,28 @@ static GBitmap *s_canvas;      // accumulated grooves (sand bed)
 static int s_canvas_w, s_canvas_h;
 static GPoint s_canvas_origin;  // where the canvas sits on screen
 
-static GColor s_c_sand, s_c_groove, s_c_text;
+static GColor s_c_sand, s_c_groove, s_c_hand;
 
-static int s_cx, s_cy, s_bigR;   // mandala centre / radius, screen coords
-static int s_ball_r;
-static GRect s_plate;            // backing plate under the clock
-static GFont s_font_time, s_font_date;
+// Face geometry. The sand bed is a disc as wide as the display; the bezel is
+// the ring between the sand and the edge, where the hour marks live.
+static int s_cx, s_cy;
+static int s_r_face;      // outer edge of the bezel
+static int s_r_sand;      // the sand bed the ball ploughs
+static int s_ball_r, s_hub_r, s_tick_len, s_groove_w;
+static int s_hour_w, s_min_w;
+static GFont s_font_date;
+static GRect s_date_box;
 
 // current pattern
-static int s_arm, s_off;         // pixel radii, normalised so arm+off == bigR
+static int s_arm, s_off;         // pixel radii, normalised so arm+off == r_sand
 static int s_pat_p, s_pat_qmp;   // p and (q-p)
 static int32_t s_t_max;          // total sweep, TRIG units
 static int32_t s_t_drawn;        // how far the groove has been ploughed
 static int s_pattern_min = -1;   // minute the current pattern belongs to
 
-static GPoint s_pen;             // ball position
+static GPoint s_pen;             // ball position, canvas-local
 static bool s_pen_valid = false;
 
-static char s_time_buf[8];
 static char s_date_buf[16];
 
 // --- sand canvas ------------------------------------------------------------
@@ -111,12 +119,9 @@ static void prv_canvas_set(int x, int y) {
 #endif
 }
 
-// The groove is 2px wide on emery, 1px on the much smaller diorite screen.
+// The groove widens with the display, so it stays visible at every size.
 static void prv_plot(int x, int y) {
-  prv_canvas_set(x, y);
-#if defined(PBL_COLOR)
-  prv_canvas_set(x + 1, y);
-#endif
+  for (int i = 0; i < s_groove_w; i++) prv_canvas_set(x + i, y);
 }
 
 // Bresenham, so consecutive samples never leave gaps in the groove.
@@ -139,10 +144,10 @@ static void prv_plot_line(GPoint a, GPoint b) {
 // Position of the ball at sweep angle t, in canvas-local coordinates.
 static GPoint prv_point_at(int32_t t) {
   int32_t kt = (t * s_pat_qmp) / s_pat_p;
-  int cx = s_bigR + 3, cy = s_bigR + 3;  // centre within the canvas
+  int c = s_r_sand + 3;  // centre within the canvas
   return GPoint(
-    (int16_t)(cx + (s_arm * cos_lookup(t) + s_off * cos_lookup(kt)) / TRIG_MAX_RATIO),
-    (int16_t)(cy + (s_arm * sin_lookup(t) - s_off * sin_lookup(kt)) / TRIG_MAX_RATIO));
+    (int16_t)(c + (s_arm * cos_lookup(t) + s_off * cos_lookup(kt)) / TRIG_MAX_RATIO),
+    (int16_t)(c + (s_arm * sin_lookup(t) - s_off * sin_lookup(kt)) / TRIG_MAX_RATIO));
 }
 
 static void prv_start_pattern(int minute) {
@@ -151,12 +156,12 @@ static void prv_start_pattern(int minute) {
   s_pat_qmp = pt->q - pt->p;
 
   // arm/off are (q-p)/q and off/100 of the radius. Re-normalise so that
-  // arm + off == bigR: every pattern then fills the sand bed exactly.
+  // arm + off == r_sand: every pattern then fills the sand bed exactly.
   int num_arm = s_pat_qmp * 100;
   int num_off = pt->off * pt->q;
   int sum = num_arm + num_off;
-  s_arm = s_bigR * num_arm / sum;
-  s_off = s_bigR * num_off / sum;
+  s_arm = s_r_sand * num_arm / sum;
+  s_off = s_r_sand * num_off / sum;
 
   s_t_max = (int32_t)TRIG_MAX_ANGLE * pt->p;
   s_t_drawn = 0;
@@ -193,14 +198,51 @@ static void prv_advance(void) {
 
 // --- drawing ----------------------------------------------------------------
 
+static GPoint prv_polar(int32_t angle, int radius) {
+  return GPoint(
+    (int16_t)(s_cx + (int32_t)sin_lookup(angle) * radius / TRIG_MAX_RATIO),
+    (int16_t)(s_cy - (int32_t)cos_lookup(angle) * radius / TRIG_MAX_RATIO));
+}
+
+// Hands carry a halo of smoothed sand so they stay legible over the grooves.
+static void prv_draw_hand(GContext *ctx, int32_t angle, int len, int width) {
+  GPoint c = GPoint(s_cx, s_cy);
+  GPoint tip = prv_polar(angle, len);
+  graphics_context_set_stroke_color(ctx, s_c_sand);
+  graphics_context_set_stroke_width(ctx, width + 4);
+  graphics_draw_line(ctx, c, tip);
+  graphics_context_set_stroke_color(ctx, s_c_hand);
+  graphics_context_set_stroke_width(ctx, width);
+  graphics_draw_line(ctx, c, tip);
+}
+
 static void prv_sand_update_proc(Layer *layer, GContext *ctx) {
+  time_t now = time(NULL);
+  struct tm *t = localtime(&now);
+
   // The sand bed, with every groove ploughed so far
   graphics_draw_bitmap_in_rect(ctx, s_canvas,
     GRect(s_canvas_origin.x, s_canvas_origin.y, s_canvas_w, s_canvas_h));
 
-  // Rim of the table
+  // Bezel: rim of the table, graduated at the twelve hours
   graphics_context_set_stroke_color(ctx, s_c_groove);
-  graphics_draw_circle(ctx, GPoint(s_cx, s_cy), s_bigR + 2);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_circle(ctx, GPoint(s_cx, s_cy), s_r_face);
+  for (int i = 0; i < 12; i++) {
+    int32_t a = TRIG_MAX_ANGLE * i / 12;
+    bool quarter = (i % 3 == 0);
+    graphics_context_set_stroke_width(ctx, quarter ? 3 : 1);
+    graphics_draw_line(ctx, prv_polar(a, s_r_face - 1),
+                            prv_polar(a, s_r_face - 1 - (quarter ? s_tick_len
+                                                                 : s_tick_len * 3 / 5)));
+  }
+
+  // Date — the only digital element, on a patch of smoothed sand
+  graphics_context_set_fill_color(ctx, s_c_sand);
+  graphics_fill_rect(ctx, s_date_box, 4, GCornersAll);
+  graphics_context_set_text_color(ctx, s_c_groove);
+  graphics_draw_text(ctx, s_date_buf, s_font_date, s_date_box,
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 
   // The ball, on the screen only — it must not leave a solid trail
   if (s_pen_valid) {
@@ -208,36 +250,34 @@ static void prv_sand_update_proc(Layer *layer, GContext *ctx) {
     graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorLightGray, GColorBlack));
     graphics_fill_circle(ctx, b, s_ball_r);
     graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack));
+    graphics_context_set_stroke_width(ctx, 1);
     graphics_draw_circle(ctx, b, s_ball_r);
     graphics_context_set_fill_color(ctx, GColorWhite);
     graphics_fill_circle(ctx, GPoint(b.x - s_ball_r / 3, b.y - s_ball_r / 3), s_ball_r / 3);
   }
 
-  // Clock, on a plate of smoothed sand so it stays readable over the grooves
-  graphics_context_set_fill_color(ctx, s_c_sand);
-  graphics_fill_rect(ctx, s_plate, 6, GCornersAll);
-  graphics_context_set_stroke_color(ctx, s_c_groove);
-  graphics_draw_round_rect(ctx, s_plate, 6);
+  // Hands. The hour hand creeps forward with the minutes rather than jumping.
+  int32_t hour_a = TRIG_MAX_ANGLE * ((t->tm_hour % 12) * 60 + t->tm_min) / 720;
+  int32_t min_a  = TRIG_MAX_ANGLE * t->tm_min / 60;
+  prv_draw_hand(ctx, hour_a, s_r_sand * 60 / 100, s_hour_w);
+  prv_draw_hand(ctx, min_a,  s_r_sand * 92 / 100, s_min_w);
 
-  const bool big = s_bigR > 60;
-  graphics_context_set_text_color(ctx, s_c_text);
-  graphics_draw_text(ctx, s_time_buf, s_font_time,
-    GRect(s_plate.origin.x, s_plate.origin.y + (big ? -2 : -1),
-          s_plate.size.w, big ? 48 : 38),
-    GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
-  graphics_draw_text(ctx, s_date_buf, s_font_date,
-    GRect(s_plate.origin.x, s_plate.origin.y + (big ? 42 : 31),
-          s_plate.size.w, big ? 20 : 16),
-    GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  // Hub, capping both hands
+  GPoint c = GPoint(s_cx, s_cy);
+  graphics_context_set_fill_color(ctx, s_c_sand);
+  graphics_fill_circle(ctx, c, s_hub_r);
+  graphics_context_set_stroke_color(ctx, s_c_hand);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_circle(ctx, c, s_hub_r);
+  graphics_context_set_fill_color(ctx, s_c_hand);
+  graphics_fill_circle(ctx, c, s_hub_r / 2);
 }
 
 // --- time -------------------------------------------------------------------
 
-static void prv_update_time(void) {
+static void prv_update_date(void) {
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
-  strftime(s_time_buf, sizeof(s_time_buf),
-           clock_is_24h_style() ? "%H:%M" : "%I:%M", t);
   strftime(s_date_buf, sizeof(s_date_buf), "%a %d", t);
   for (char *p = s_date_buf; *p; p++) {
     if (*p >= 'a' && *p <= 'z') *p -= 'a' - 'A';
@@ -245,7 +285,7 @@ static void prv_update_time(void) {
 }
 
 static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
-  prv_update_time();
+  prv_update_date();
   layer_mark_dirty(s_sand_layer);
 }
 
@@ -262,27 +302,36 @@ static void prv_window_load(Window *window) {
   GRect bounds = layer_get_bounds(root);
   const int w = bounds.size.w;
   const int h = bounds.size.h;
-  const bool big = h >= 200;  // emery (200x228) vs diorite (144x168)
 
-  // Clock plate along the bottom, sand bed centred in what is left above it
-  const int plate_h = big ? 62 : 46;
-  const int plate_y = h - plate_h - 4;
-  const int plate_w = big ? 136 : 104;
-
+  // The sand bed uses the full width of the display, whatever its shape: on a
+  // round face that is the whole screen, on a rectangular one a disc as wide
+  // as the screen, centred in it.
   s_cx = w / 2;
-  s_cy = (plate_y - 4) / 2 + 2;
-  s_bigR = (w / 2) - 4;
-  if (s_bigR > s_cy - 4) s_bigR = s_cy - 4;
-  s_ball_r = big ? 5 : 4;
-  s_plate = GRect(s_cx - plate_w / 2, plate_y, plate_w, plate_h);
+  s_cy = h / 2;
+  s_r_face = w / 2 - 1;
 
-  s_font_time = fonts_get_system_font(big ? FONT_KEY_BITHAM_42_LIGHT
-                                          : FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
+  int bezel;
+  if (w >= 240) {         // gabbro (260x260 round)
+    bezel = 12; s_ball_r = 7; s_hub_r = 8; s_tick_len = 10;
+    s_hour_w = 7; s_min_w = 5; s_groove_w = 3;
+  } else if (w >= 180) {  // emery (200x228), chalk (180x180 round)
+    bezel = 9;  s_ball_r = 5; s_hub_r = 6; s_tick_len = 8;
+    s_hour_w = 5; s_min_w = 3; s_groove_w = 2;
+  } else {                // diorite / flint (144x168)
+    bezel = 6;  s_ball_r = 4; s_hub_r = 5; s_tick_len = 6;
+    s_hour_w = 5; s_min_w = 3; s_groove_w = PBL_IF_COLOR_ELSE(2, 1);
+  }
+  s_r_sand = s_r_face - bezel;
+
+  const bool big = (w >= 240);
   s_font_date = fonts_get_system_font(big ? FONT_KEY_GOTHIC_18 : FONT_KEY_GOTHIC_14);
+  const int dw = big ? 78 : 58;
+  const int dh = big ? 22 : 18;
+  s_date_box = GRect(s_cx - dw / 2, s_cy + s_r_sand * 3 / 5, dw, dh);
 
   // Only the sand bed needs a canvas, not the whole screen
-  s_canvas_w = s_canvas_h = 2 * s_bigR + 6;
-  s_canvas_origin = GPoint(s_cx - s_bigR - 3, s_cy - s_bigR - 3);
+  s_canvas_w = s_canvas_h = 2 * s_r_sand + 6;
+  s_canvas_origin = GPoint(s_cx - s_r_sand - 3, s_cy - s_r_sand - 3);
   s_canvas = gbitmap_create_blank(GSize(s_canvas_w, s_canvas_h),
                                   PBL_IF_COLOR_ELSE(GBitmapFormat8Bit, GBitmapFormat1Bit));
 
@@ -290,7 +339,7 @@ static void prv_window_load(Window *window) {
   layer_set_update_proc(s_sand_layer, prv_sand_update_proc);
   layer_add_child(root, s_sand_layer);
 
-  prv_update_time();
+  prv_update_date();
   // Draw the pattern up to the current point in the minute, so opening the
   // face mid-minute shows the sand as it should already look.
   prv_advance();
@@ -309,7 +358,7 @@ static void prv_window_unload(Window *window) {
 static void prv_init(void) {
   s_c_sand   = PBL_IF_COLOR_ELSE(GColorPastelYellow, GColorWhite);
   s_c_groove = PBL_IF_COLOR_ELSE(GColorWindsorTan, GColorBlack);
-  s_c_text   = PBL_IF_COLOR_ELSE(GColorWindsorTan, GColorBlack);
+  s_c_hand   = GColorBlack;
 
   s_window = window_create();
   window_set_background_color(s_window, s_c_sand);
