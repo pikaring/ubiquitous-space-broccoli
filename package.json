@@ -1,0 +1,29 @@
+{
+  "name": "zensand",
+  "author": "MakeAwesomeHappen",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "ZenSand",
+    "uuid": "a4e17b93-2c68-4d05-9f31-6b8ad2c7e540",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "capabilities": [],
+    "targetPlatforms": [
+      "diorite",
+      "emery",
+      "chalk",
+      "flint",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "messageKeys": [],
+    "resources": {
+      "media": []
+    }
+  }
+}
