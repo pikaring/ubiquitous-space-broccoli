@@ -29,6 +29,7 @@
 #define FRAME_MS      50      // ~20fps
 #define STEP_UNITS    128     // angular step per plotted point (TRIG units)
 #define STEP_GUARD    8000    // max points plotted in one frame (catch-up)
+#define SUBPX         16      // sub-pixel units used when measuring path length
 
 // --- pattern table ----------------------------------------------------------
 // A hypotrochoid traced by a circle of radius r rolling inside radius R, with
@@ -88,6 +89,9 @@ static int s_arm, s_off;         // pixel radii, normalised so arm+off == r_sand
 static int s_pat_p, s_pat_qmp;   // p and (q-p)
 static int32_t s_t_max;          // total sweep, TRIG units
 static int32_t s_t_drawn;        // how far the groove has been ploughed
+static int32_t s_sub_x, s_sub_y; // ball position in 1/SUBPX px, pattern-relative
+static uint32_t s_path_len;      // length of the whole path, 1/SUBPX px
+static uint32_t s_len_drawn;     // length rolled so far, 1/SUBPX px
 static int s_pattern_min = -1;   // minute the current pattern belongs to
 
 static GPoint s_pen;             // ball position, canvas-local
@@ -141,13 +145,26 @@ static void prv_plot_line(GPoint a, GPoint b) {
 
 // --- pattern ----------------------------------------------------------------
 
-// Position of the ball at sweep angle t, in canvas-local coordinates.
-static GPoint prv_point_at(int32_t t) {
+// Position of the ball at sweep angle t, in 1/SUBPX px from the pattern centre.
+// Sub-pixel units matter here: consecutive samples are about a pixel apart, so
+// measuring them at whole-pixel resolution would quantise the path length away.
+static void prv_point_sub(int32_t t, int32_t *x, int32_t *y) {
   int32_t kt = (t * s_pat_qmp) / s_pat_p;
-  int c = s_r_sand + 3;  // centre within the canvas
-  return GPoint(
-    (int16_t)(c + (s_arm * cos_lookup(t) + s_off * cos_lookup(kt)) / TRIG_MAX_RATIO),
-    (int16_t)(c + (s_arm * sin_lookup(t) - s_off * sin_lookup(kt)) / TRIG_MAX_RATIO));
+  *x = (s_arm * cos_lookup(t) + s_off * cos_lookup(kt)) / (TRIG_MAX_RATIO / SUBPX);
+  *y = (s_arm * sin_lookup(t) - s_off * sin_lookup(kt)) / (TRIG_MAX_RATIO / SUBPX);
+}
+
+static GPoint prv_canvas_point(int32_t x, int32_t y) {
+  int32_t c = (int32_t)(s_r_sand + 3) * SUBPX;  // centre within the canvas
+  return GPoint((int16_t)((c + x) / SUBPX), (int16_t)((c + y) / SUBPX));
+}
+
+// |(dx,dy)| to within about 4%. The same approximation measures the whole path
+// and the part already rolled, so its error cancels out of the pacing.
+static uint32_t prv_seg_len(int32_t dx, int32_t dy) {
+  if (dx < 0) dx = -dx;
+  if (dy < 0) dy = -dy;
+  return (uint32_t)(dx > dy ? dx + dy * 3 / 8 : dy + dx * 3 / 8);
 }
 
 static void prv_start_pattern(int minute) {
@@ -164,7 +181,27 @@ static void prv_start_pattern(int minute) {
   s_off = s_r_sand * num_off / sum;
 
   s_t_max = (int32_t)TRIG_MAX_ANGLE * pt->p;
+
+  // Measure the path so the ball can be driven by distance rolled rather than
+  // by sweep angle. A hypotrochoid's parametric speed swings by more than a
+  // hundred to one — |dp/dt|² = arm² + (off·k)² − 2·arm·off·k·cos((k+1)t) — so
+  // advancing t evenly would stall the ball at every petal tip and fling it
+  // across the middle. Walking the curve once here, with exactly the step
+  // sequence the groove is drawn with, gives a total to pace against.
+  int32_t px, py;
+  prv_point_sub(0, &px, &py);
+  s_path_len = 0;
+  for (int32_t t = STEP_UNITS; t <= s_t_max; t += STEP_UNITS) {
+    int32_t x, y;
+    prv_point_sub(t, &x, &y);
+    s_path_len += prv_seg_len(x - px, y - py);
+    px = x;
+    py = y;
+  }
+
   s_t_drawn = 0;
+  s_len_drawn = 0;
+  prv_point_sub(0, &s_sub_x, &s_sub_y);
   s_pen_valid = false;
   s_pattern_min = minute;
   prv_canvas_clear();
@@ -179,15 +216,20 @@ static void prv_advance(void) {
 
   if (t->tm_min != s_pattern_min) prv_start_pattern(t->tm_min);
 
-  // The ball paces itself so the pattern completes exactly on the minute.
+  // Distance covered rises linearly with the time into the minute, so the ball
+  // rolls at a steady speed and still finishes the pattern on the minute.
   int32_t into_min = (int32_t)t->tm_sec * 1000 + ms;
-  int32_t target = (int32_t)(((int64_t)s_t_max * into_min) / 60000);
+  uint32_t target = (uint32_t)(((uint64_t)s_path_len * into_min) / 60000);
 
   int guard = 0;
-  while (s_t_drawn < target && guard++ < STEP_GUARD) {
+  while (s_len_drawn < target && s_t_drawn < s_t_max && guard++ < STEP_GUARD) {
     s_t_drawn += STEP_UNITS;
-    if (s_t_drawn > target) s_t_drawn = target;
-    GPoint p = prv_point_at(s_t_drawn);
+    int32_t x, y;
+    prv_point_sub(s_t_drawn, &x, &y);
+    s_len_drawn += prv_seg_len(x - s_sub_x, y - s_sub_y);
+    s_sub_x = x;
+    s_sub_y = y;
+    GPoint p = prv_canvas_point(x, y);
     if (s_pen_valid) prv_plot_line(s_pen, p);
     else prv_plot(p.x, p.y);
     s_pen = p;
@@ -323,11 +365,17 @@ static void prv_window_load(Window *window) {
   }
   s_r_sand = s_r_face - bezel;
 
+  // Cinzel: Roman inscriptional capitals, letters cut into stone next to
+  // grooves cut into sand. It is a wide face — the longest date, "MON 28",
+  // measures 59px at 14 and 75px at 18 — and the patch has to stay inside the
+  // sand disc on the small screens, so it also sits a little above where two
+  // thirds of the radius would put it.
   const bool big = (w >= 240);
-  s_font_date = fonts_get_system_font(big ? FONT_KEY_GOTHIC_18 : FONT_KEY_GOTHIC_14);
-  const int dw = big ? 78 : 58;
+  s_font_date = fonts_load_custom_font(resource_get_handle(
+      big ? RESOURCE_ID_FONT_CINZEL_18 : RESOURCE_ID_FONT_CINZEL_14));
+  const int dw = big ? 84 : 66;
   const int dh = big ? 22 : 18;
-  s_date_box = GRect(s_cx - dw / 2, s_cy + s_r_sand * 3 / 5, dw, dh);
+  s_date_box = GRect(s_cx - dw / 2, s_cy + s_r_sand * 55 / 100, dw, dh);
 
   // Only the sand bed needs a canvas, not the whole screen
   s_canvas_w = s_canvas_h = 2 * s_r_sand + 6;
@@ -353,6 +401,7 @@ static void prv_window_unload(Window *window) {
   }
   layer_destroy(s_sand_layer);
   gbitmap_destroy(s_canvas);
+  fonts_unload_custom_font(s_font_date);
 }
 
 static void prv_init(void) {
