@@ -23,7 +23,20 @@
     },
     "messageKeys": [],
     "resources": {
-      "media": []
+      "media": [
+        {
+          "type": "font",
+          "name": "FONT_CINZEL_14",
+          "file": "fonts/CinzelBold.ttf",
+          "characterRegex": "[A-Z0-9 ]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_CINZEL_18",
+          "file": "fonts/CinzelBold.ttf",
+          "characterRegex": "[A-Z0-9 ]"
+        }
+      ]
     }
   }
 }
