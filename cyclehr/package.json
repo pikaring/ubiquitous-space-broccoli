@@ -10,9 +10,8 @@
     "uuid": "7c3f2a4e-9b1d-4e6a-8f5c-2d7e91a3b6c4",
     "sdkVersion": "3",
     "enableMultiJS": true,
-    "capabilities": ["location", "health"],
+    "capabilities": ["location", "health", "configurable"],
     "targetPlatforms": [
-      "basalt",
       "diorite",
       "emery"
     ],
@@ -22,10 +21,61 @@
     "messageKeys": [
       "TEMPERATURE",
       "CONDITIONS",
-      "ICON"
+      "ICON",
+      "TIME_FORMAT",
+      "MAX_HR"
     ],
     "resources": {
-      "media": []
+      "media": [
+        {
+          "type": "font",
+          "name": "FONT_ORBITRON_40",
+          "file": "fonts/OrbitronBold.ttf",
+          "characterRegex": "[0-9\\-:]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_ORBITRON_36",
+          "file": "fonts/OrbitronBold.ttf",
+          "characterRegex": "[0-9\\-:]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_ORBITRON_28",
+          "file": "fonts/OrbitronBold.ttf",
+          "characterRegex": "[0-9\\-:]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_ORBITRON_24",
+          "file": "fonts/OrbitronBold.ttf",
+          "characterRegex": "[0-9\\-:]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_SAIRA_12",
+          "file": "fonts/SairaSemiCondensed-Medium.ttf",
+          "characterRegex": "[ -~°]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_SAIRA_14",
+          "file": "fonts/SairaSemiCondensed-Medium.ttf",
+          "characterRegex": "[ -~°]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_SAIRA_18",
+          "file": "fonts/SairaSemiCondensed-Medium.ttf",
+          "characterRegex": "[ -~°]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_SAIRA_24",
+          "file": "fonts/SairaSemiCondensed-Medium.ttf",
+          "characterRegex": "[ -~°]"
+        }
+      ]
     }
   }
 }

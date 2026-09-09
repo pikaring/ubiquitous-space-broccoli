@@ -1,6 +1,12 @@
-// sys/types.h must come first: it provides time_t, which pebble.h needs but
-// cannot get from <time.h> because the SDK builds with -D_TIME_H_
+// The SDK builds with -D_TIME_H_, which suppresses <time.h>. Some toolchains
+// (e.g. our local one) then leave time_t undefined, so we pull it in from
+// <sys/types.h>. Other build environments (e.g. CloudPebble) instead pass
+// -Dtime_t=long, making time_t a predefined macro — including <sys/types.h>
+// there would redeclare it and fail with "two or more data types in
+// declaration specifiers". Only include it when time_t is not already defined.
+#ifndef time_t
 #include <sys/types.h>
+#endif
 #include <pebble.h>
 
 // ---------------------------------------------------------------------------
@@ -13,25 +19,35 @@
 
 #define HISTORY_LEN 60
 
-// HR zones derived from max HR (Karvonen-less simple %max model).
-// Adjust MAX_HR to your own maximum heart rate.
-#define MAX_HR 190
-#define ZONE2_MIN (MAX_HR * 60 / 100)  // 114
-#define ZONE3_MIN (MAX_HR * 70 / 100)  // 133
-#define ZONE4_MIN (MAX_HR * 80 / 100)  // 152
-#define ZONE5_MIN (MAX_HR * 90 / 100)  // 171
+// HR zones derived from max HR (simple %max model). The max HR defaults to
+// 190 but is overridden from the config screen (220 - age). Zone thresholds
+// are computed at runtime from s_max_hr.
+#define DEFAULT_MAX_HR 190
+#define ZONE2_MIN (s_max_hr * 60 / 100)
+#define ZONE3_MIN (s_max_hr * 70 / 100)
+#define ZONE4_MIN (s_max_hr * 80 / 100)
+#define ZONE5_MIN (s_max_hr * 90 / 100)
 
 // Chart vertical scale
 #define CHART_HR_MIN 50
-#define CHART_HR_MAX MAX_HR
+#define CHART_HR_MAX (s_max_hr)
+
+// Time format (from config): 0=follow watch, 1=12h (AM/PM), 2=24h
+enum {
+  TIME_FORMAT_SYSTEM = 0,
+  TIME_FORMAT_12H,
+  TIME_FORMAT_24H,
+};
 
 // How often the HR sensor should sample while this face is open (seconds)
 #define HR_SAMPLE_PERIOD_SEC 15
 
 // Persistence keys
-#define PERSIST_KEY_HISTORY   1
-#define PERSIST_KEY_HEAD      2
-#define PERSIST_KEY_SAVED_AT  3
+#define PERSIST_KEY_HISTORY     1
+#define PERSIST_KEY_HEAD        2
+#define PERSIST_KEY_SAVED_AT    3
+#define PERSIST_KEY_MAX_HR      4
+#define PERSIST_KEY_TIME_FORMAT 5
 
 // Weather icon ids (must match src/pkjs/index.js)
 enum {
@@ -70,6 +86,19 @@ static int s_weather_icon = ICON_SUN;
 static bool s_weather_valid = false;
 static int s_current_hr = 0;
 
+// User settings (config screen)
+static int s_max_hr = DEFAULT_MAX_HR;
+static int s_time_format = TIME_FORMAT_SYSTEM;
+
+static GFont s_font_time;   // large Orbitron for the clock
+static GFont s_font_hr;     // medium Orbitron for the HR number
+static GFont s_font_label_12;  // Saira SemiCondensed labels
+static GFont s_font_label_14;
+static GFont s_font_label_18;
+static GFont s_font_label_24;
+static GFont s_font_label_sm; // small-label font in use (14 emery / 12 diorite)
+static bool s_blink = false;
+
 // Circular buffer of 1-minute HR samples; s_head is the next write slot,
 // so oldest sample is s_history[s_head] and newest is s_history[s_head-1].
 static uint8_t s_history[HISTORY_LEN];
@@ -93,20 +122,30 @@ static GColor prv_zone_color(int hr) {
 #endif
 }
 
+static bool prv_hr_accessible(void) {
+#if defined(PBL_HEALTH)
+  time_t now = time(NULL);
+  return health_service_metric_accessible(HealthMetricHeartRateBPM, now - 60, now)
+         & HealthServiceAccessibilityMaskAvailable;
+#else
+  return false;
+#endif
+}
+
 static int prv_read_current_hr(void) {
 #if defined(PBL_HEALTH)
-  HealthServiceAccessibilityMask mask =
-      health_service_metric_accessible(HealthMetricHeartRateBPM, time(NULL), time(NULL));
-  if (mask & HealthServiceAccessibilityMaskAvailable) {
-    return (int)health_service_peek_current_value(HealthMetricHeartRateBPM);
-  }
-#endif
+  HealthValue hr = health_service_peek_current_value(HealthMetricHeartRateBPM);
+  return (hr > 0) ? (int)hr : 0;
+#else
   return 0;
+#endif
 }
 
 static void prv_update_hr_text(void) {
   if (s_current_hr > 0) {
     snprintf(s_hr_buf, sizeof(s_hr_buf), "%d", s_current_hr);
+  } else if (!prv_hr_accessible()) {
+    snprintf(s_hr_buf, sizeof(s_hr_buf), "---");
   } else {
     snprintf(s_hr_buf, sizeof(s_hr_buf), "--");
   }
@@ -146,20 +185,38 @@ static void prv_load_history(void) {
   }
 }
 
+static void prv_load_settings(void) {
+  if (persist_exists(PERSIST_KEY_MAX_HR)) {
+    s_max_hr = persist_read_int(PERSIST_KEY_MAX_HR);
+  }
+  if (s_max_hr < 100 || s_max_hr > 230) s_max_hr = DEFAULT_MAX_HR;
+  if (persist_exists(PERSIST_KEY_TIME_FORMAT)) {
+    s_time_format = persist_read_int(PERSIST_KEY_TIME_FORMAT);
+  }
+  if (s_time_format < 0 || s_time_format > TIME_FORMAT_24H) {
+    s_time_format = TIME_FORMAT_SYSTEM;
+  }
+}
+
+static void prv_save_settings(void) {
+  persist_write_int(PERSIST_KEY_MAX_HR, s_max_hr);
+  persist_write_int(PERSIST_KEY_TIME_FORMAT, s_time_format);
+}
+
 // --- time / date -------------------------------------------------------------
 
 static void prv_update_time(void) {
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
 
-  if (clock_is_24h_style()) {
+  bool h24 = (s_time_format == TIME_FORMAT_24H) ||
+             (s_time_format == TIME_FORMAT_SYSTEM && clock_is_24h_style());
+
+  if (h24) {
     strftime(s_time_buf, sizeof(s_time_buf), "%H:%M", t);
     s_ampm_buf[0] = '\0';
   } else {
     strftime(s_time_buf, sizeof(s_time_buf), "%I:%M", t);
-    if (s_time_buf[0] == '0') {
-      memmove(s_time_buf, s_time_buf + 1, strlen(s_time_buf));
-    }
     strftime(s_ampm_buf, sizeof(s_ampm_buf), "%p", t);
   }
   text_layer_set_text(s_time_layer, s_time_buf);
@@ -240,33 +297,51 @@ static void prv_heart_update_proc(Layer *layer, GContext *ctx) {
   GPoint c = GPoint(b.size.w / 2, b.size.h / 2 - 1);
   GColor red = PBL_IF_COLOR_ELSE(GColorRed, GColorWhite);
 
-  // heart = two circles + triangle
+  // Heart: two circles + filled triangle
   graphics_context_set_fill_color(ctx, red);
   graphics_fill_circle(ctx, GPoint(c.x - 4, c.y - 3), 4);
   graphics_fill_circle(ctx, GPoint(c.x + 4, c.y - 3), 4);
   GPoint tri[3] = {
     {(int16_t)(c.x - 8), (int16_t)(c.y - 1)},
     {(int16_t)(c.x + 8), (int16_t)(c.y - 1)},
-    {(int16_t)c.x, (int16_t)(c.y + 8)},
+    {(int16_t)c.x,       (int16_t)(c.y + 8)},
   };
   GPathInfo info = {.num_points = 3, .points = tri};
   GPath *path = gpath_create(&info);
   gpath_draw_filled(ctx, path);
   gpath_destroy(path);
 
-  // pulse arcs "(( ))"
+  // Double pulse arcs: (( heart ))
+  // Outer arcs — always visible (thick)
+  // Inner arcs — blink on/off every second (thin)
+  const int r_outer = b.size.h / 2;
+  const int r_inner = r_outer * 3 / 4;
+  GRect outer_rect = GRect(c.x - r_outer, c.y - r_outer, r_outer * 2, r_outer * 2);
+  GRect inner_rect = GRect(c.x - r_inner, c.y - r_inner, r_inner * 2, r_inner * 2);
+
   graphics_context_set_stroke_color(ctx, red);
   graphics_context_set_stroke_width(ctx, 2);
-  GRect arc = GRect(c.x - 13, c.y - 12, 26, 26);
-  graphics_draw_arc(ctx, arc, GOvalScaleModeFitCircle,
-                    DEG_TO_TRIGANGLE(60), DEG_TO_TRIGANGLE(120));
-  graphics_draw_arc(ctx, arc, GOvalScaleModeFitCircle,
-                    DEG_TO_TRIGANGLE(240), DEG_TO_TRIGANGLE(300));
+  // Outer )  arc (right side)
+  graphics_draw_arc(ctx, outer_rect, GOvalScaleModeFitCircle,
+                    DEG_TO_TRIGANGLE(45), DEG_TO_TRIGANGLE(135));
+  // Outer (  arc (left side)
+  graphics_draw_arc(ctx, outer_rect, GOvalScaleModeFitCircle,
+                    DEG_TO_TRIGANGLE(225), DEG_TO_TRIGANGLE(315));
+
+  if (s_blink) {
+    graphics_context_set_stroke_width(ctx, 1);
+    // Inner ) arc (right, blinks)
+    graphics_draw_arc(ctx, inner_rect, GOvalScaleModeFitCircle,
+                      DEG_TO_TRIGANGLE(45), DEG_TO_TRIGANGLE(135));
+    // Inner ( arc (left, blinks)
+    graphics_draw_arc(ctx, inner_rect, GOvalScaleModeFitCircle,
+                      DEG_TO_TRIGANGLE(225), DEG_TO_TRIGANGLE(315));
+  }
 }
 
 static void prv_chart_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
-  GFont small = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  GFont small = s_font_label_sm;
   const int axis_h = 16;
   int chart_h = b.size.h - axis_h;
 
@@ -302,7 +377,7 @@ static void prv_legend_update_proc(Layer *layer, GContext *ctx) {
   static const char *names[5] = {"Z1", "Z2", "Z3", "Z4", "Z5"};
   // representative HR for each zone picks the matching color
   const int rep_hr[5] = {0, ZONE2_MIN, ZONE3_MIN, ZONE4_MIN, ZONE5_MIN};
-  GFont small = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  GFont small = s_font_label_sm;
 
   for (int i = 0; i < 5; i++) {
     int x = i * b.size.w / 5;
@@ -320,18 +395,26 @@ static void prv_legend_update_proc(Layer *layer, GContext *ctx) {
 // --- events -------------------------------------------------------------------
 
 static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
-  prv_update_time();
-  s_current_hr = prv_read_current_hr();
-  prv_update_hr_text();
-  prv_record_sample();
+  if (units_changed & SECOND_UNIT) {
+    s_blink = !s_blink;
+    if (s_heart_layer) layer_mark_dirty(s_heart_layer);
+  }
+  if (units_changed & MINUTE_UNIT) {
+    prv_update_time();
+    s_current_hr = prv_read_current_hr();
+    prv_update_hr_text();
+    prv_record_sample();
+  }
 }
 
 #if defined(PBL_HEALTH)
 static void prv_health_handler(HealthEventType event, void *context) {
-  if (event == HealthEventHeartRateUpdate || event == HealthEventSignificantUpdate) {
-    s_current_hr = prv_read_current_hr();
-    prv_update_hr_text();
-  }
+  // React to every health event: HealthEventHeartRateUpdate is only
+  // delivered on newer firmware; movement/significant events also carry
+  // updated HR data, so we always re-read to be safe.
+  (void)event;
+  s_current_hr = prv_read_current_hr();
+  prv_update_hr_text();
 }
 #endif
 
@@ -339,6 +422,25 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *temp = dict_find(iter, MESSAGE_KEY_TEMPERATURE);
   Tuple *cond = dict_find(iter, MESSAGE_KEY_CONDITIONS);
   Tuple *icon = dict_find(iter, MESSAGE_KEY_ICON);
+  Tuple *max_hr = dict_find(iter, MESSAGE_KEY_MAX_HR);
+  Tuple *tfmt = dict_find(iter, MESSAGE_KEY_TIME_FORMAT);
+
+  // Settings from the config screen
+  if (max_hr || tfmt) {
+    if (max_hr) {
+      int v = (int)max_hr->value->int32;
+      if (v >= 100 && v <= 230) s_max_hr = v;
+    }
+    if (tfmt) {
+      int v = (int)tfmt->value->int32;
+      if (v >= 0 && v <= TIME_FORMAT_24H) s_time_format = v;
+    }
+    prv_save_settings();
+    prv_update_time();
+    prv_update_hr_text();
+    layer_mark_dirty(s_chart_layer);
+    layer_mark_dirty(s_legend_layer);
+  }
 
   if (temp) {
     snprintf(s_temp_buf, sizeof(s_temp_buf), "%d°C", (int)temp->value->int32);
@@ -357,12 +459,12 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
 
 // --- window -------------------------------------------------------------------
 
-static TextLayer *prv_make_text(Layer *parent, GRect frame, const char *font_key,
+static TextLayer *prv_make_text(Layer *parent, GRect frame, GFont font,
                                 GTextAlignment align, const char *text) {
   TextLayer *tl = text_layer_create(frame);
   text_layer_set_background_color(tl, GColorClear);
   text_layer_set_text_color(tl, GColorWhite);
-  text_layer_set_font(tl, fonts_get_system_font(font_key));
+  text_layer_set_font(tl, font);
   text_layer_set_text_alignment(tl, align);
   if (text) text_layer_set_text(tl, text);
   layer_add_child(parent, text_layer_get_layer(tl));
@@ -374,71 +476,114 @@ static void prv_window_load(Window *window) {
   GRect bounds = layer_get_bounds(root);
   const int w = bounds.size.w;
   const int h = bounds.size.h;
-  const bool big = h >= 200;  // emery
+  const bool big = h >= 200;  // emery (200x228) vs diorite (144x168)
 
-  const int weather_h = h * 15 / 100;
-  const int time_h = h * 26 / 100;
-  const int hr_h = h * 21 / 100;
-  const int label_h = 16;
-  const int legend_h = 15;
+  // Section heights — give the HR row more room so the number can be larger
+  // emery: weather=29 time=61 hr=57 label=14 chart=53 legend=14  total=228
+  // diorite: weather=21 time=45 hr=42 label=14 chart=32 legend=14  total=168
+  const int weather_h = h * 13 / 100;
+  const int time_h    = h * 27 / 100;
+  const int hr_h      = h * 25 / 100;
+  const int label_h   = 14;
+  const int legend_h  = 14;
+  const int chart_h   = h - weather_h - time_h - hr_h - label_h - legend_h;
+
+  const int right_w   = w * 30 / 100;   // column for AM/PM + date
+
+  // Load Orbitron custom fonts. Use larger sizes on emery, smaller on the
+  // narrower diorite, so "HH:MM" and a 3-digit HR both fit their layers.
+  if (big) {
+    s_font_time = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_40));
+    s_font_hr   = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_36));
+  } else {
+    s_font_time = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_28));
+    s_font_hr   = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ORBITRON_24));
+  }
+  // Saira SemiCondensed for all labels. The narrow diorite (144px) uses a
+  // smaller size across the board so nothing clips; emery (200px) is larger.
+  s_font_label_12 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_12));
+  s_font_label_14 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_14));
+  s_font_label_18 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_18));
+  s_font_label_24 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SAIRA_24));
+  s_font_label_sm = big ? s_font_label_14 : s_font_label_12;  // 14 emery / 12 diorite
+  GFont label_sm  = s_font_label_sm;
+  GFont label_mid = big ? s_font_label_18 : s_font_label_12;  // 18 emery / 12 diorite
+  const int label_mid_h = big ? 20 : 14;
+  GFont bpm_font = big ? s_font_label_24 : s_font_label_12;
+  const int bpm_w = big ? 46 : 24;
 
   int y = 0;
   s_bg_layer = layer_create(bounds);
   layer_set_update_proc(s_bg_layer, prv_bg_update_proc);
   layer_add_child(root, s_bg_layer);
 
-  // -- weather row
-  s_weather_icon_layer = layer_create(GRect(2, y + 1, weather_h, weather_h - 2));
+  // ── weather row ───────────────────────────────────────────────────────────
+  const int icon_sz = weather_h - 2;
+  s_weather_icon_layer = layer_create(GRect(2, y + 1, icon_sz, icon_sz));
   layer_set_update_proc(s_weather_icon_layer, prv_weather_icon_update_proc);
   layer_add_child(root, s_weather_icon_layer);
-  int text_y = y + (weather_h - 22) / 2 - 2;
-  s_temp_layer = prv_make_text(root, GRect(weather_h + 4, text_y, w * 35 / 100, 22),
-                               FONT_KEY_GOTHIC_18_BOLD, GTextAlignmentLeft, "--°C");
-  s_cond_layer = prv_make_text(root, GRect(w / 2 - 4, text_y, w / 2, 22),
-                               FONT_KEY_GOTHIC_18_BOLD, GTextAlignmentRight, "");
+  const int wty = y + (weather_h - label_mid_h) / 2;
+  s_temp_layer = prv_make_text(root, GRect(icon_sz + 4, wty, w * 37 / 100, label_mid_h + 2),
+                               label_mid, GTextAlignmentLeft, "--°C");
+  s_cond_layer = prv_make_text(root, GRect(w / 2, wty, w / 2 - 2, label_mid_h + 2),
+                               label_mid, GTextAlignmentRight, "");
   y += weather_h;
   s_sep_y[0] = y;
 
-  // -- time row
-  const char *time_font = big ? FONT_KEY_LECO_42_NUMBERS : FONT_KEY_LECO_36_BOLD_NUMBERS;
-  int time_font_h = big ? 42 : 36;
-  int right_w = w * 30 / 100;
-  s_time_layer = prv_make_text(root, GRect(2, y + (time_h - time_font_h) / 2 - 6, w - right_w, time_h),
-                               time_font, GTextAlignmentLeft, "--:--");
-  s_ampm_layer = prv_make_text(root, GRect(w - right_w, y + time_h / 2 - 18, right_w - 2, 18),
-                               FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentRight, "");
-  s_date_layer = prv_make_text(root, GRect(w - right_w, y + time_h / 2 - 2, right_w - 2, 18),
-                               FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentRight, "");
+  // ── time row — Orbitron digits ────────────────────────────────────────────
+  // Widen the time layer past the right column's (empty) left padding so the
+  // digits have enough room; the date is right-aligned and short.
+  s_time_layer = prv_make_text(root, GRect(2, y + 4, w - right_w + 8, time_h),
+                               s_font_time, GTextAlignmentLeft, "--:--");
+  // Widen the info column on emery so long day names like "WED 12" don't clip.
+  // Start from 55% of screen width (110px on emery) instead of 70% (142px).
+  // The Orbitron time digits are left-aligned and never visually reach x=110.
+  const int info_x = big ? (w * 55 / 100) : (w - right_w + 2);
+  const int info_w = big ? (w - info_x - 2) : (right_w - 4);
+  s_ampm_layer = prv_make_text(root, GRect(info_x, y + 4, info_w, label_mid_h),
+                               label_mid, GTextAlignmentRight, "");
+  s_date_layer = prv_make_text(root, GRect(info_x, y + 4 + label_mid_h + 2,
+                               info_w, label_mid_h), label_mid, GTextAlignmentRight, "");
   y += time_h;
   s_sep_y[1] = y;
 
-  // -- heart rate row
-  s_hr_label_layer = prv_make_text(root, GRect(4, y - 2, w / 2, 16),
-                                   FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentLeft, "HEART RATE");
-  s_heart_layer = layer_create(GRect(8, y + 14, 34, hr_h - 16));
+  // ── heart rate row ────────────────────────────────────────────────────────
+  s_hr_label_layer = prv_make_text(root, GRect(4, y + 2, w / 2, 14),
+                                   label_sm, GTextAlignmentLeft, "HEART RATE");
+  const int heart_h = hr_h - 16;
+  const int heart_w = heart_h + 8;
+  const int heart_x = 6;  // aligned under the "HEART RATE" label
+  s_heart_layer = layer_create(GRect(heart_x, y + 16, heart_w, heart_h));
   layer_set_update_proc(s_heart_layer, prv_heart_update_proc);
   layer_add_child(root, s_heart_layer);
-  int hr_font_h = 32;
-  s_hr_value_layer = prv_make_text(root, GRect(w / 2 - 14, y + (hr_h - hr_font_h) / 2 - 6, w / 2 - 18, hr_h),
-                                   FONT_KEY_LECO_32_BOLD_NUMBERS, GTextAlignmentRight, "--");
-  s_hr_unit_layer = prv_make_text(root, GRect(w - 30, y + hr_h - 20, 30, 16),
-                                  FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentLeft, "bpm");
+
+  // "bpm" is pinned to the right edge (right-aligned). The HR number is
+  // right-aligned ending just left of it, with room for 3 digits.
+  const int hr_val_left = heart_x + heart_w + 2;
+  s_hr_value_layer = prv_make_text(root,
+    GRect(hr_val_left, y + 8, (w - bpm_w - 6) - hr_val_left, hr_h - 8),
+    s_font_hr, GTextAlignmentRight, "--");
+  // Align bpm bottom with HR number text bottom.
+  // HR text bottom ≈ (y+8) + font_size (36 emery / 24 diorite).
+  // bpm top = HR text bottom - bpm font_size (24 emery / 18 diorite).
+  const int bpm_top = y + 8 + (big ? (36 - 24) : (24 - 12));
+  s_hr_unit_layer = prv_make_text(root, GRect(w - bpm_w - 2, bpm_top, bpm_w, big ? 26 : 22),
+                                  bpm_font, GTextAlignmentRight, "bpm");
   y += hr_h;
   s_sep_y[2] = y;
 
-  // -- zones label
-  s_zones_label_layer = prv_make_text(root, GRect(0, y - 2, w, label_h),
-                                      FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentCenter, "1-MIN HR ZONES");
+  // ── 1-MIN HR ZONES label ─────────────────────────────────────────────────
+  s_zones_label_layer = prv_make_text(root, GRect(0, y + 1, w, label_h),
+                                      label_sm, GTextAlignmentCenter, "1-MIN HR ZONES");
   y += label_h;
 
-  // -- chart (bars + time axis) and legend
-  int chart_h = h - y - legend_h - 2;
+  // ── chart + legend ────────────────────────────────────────────────────────
   s_chart_layer = layer_create(GRect(2, y, w - 4, chart_h));
   layer_set_update_proc(s_chart_layer, prv_chart_update_proc);
   layer_add_child(root, s_chart_layer);
   y += chart_h;
 
-  s_legend_layer = layer_create(GRect(2, y + 1, w - 2, legend_h));
+  s_legend_layer = layer_create(GRect(2, y, w - 4, legend_h));
   layer_set_update_proc(s_legend_layer, prv_legend_update_proc);
   layer_add_child(root, s_legend_layer);
 
@@ -448,6 +593,12 @@ static void prv_window_load(Window *window) {
 }
 
 static void prv_window_unload(Window *window) {
+  fonts_unload_custom_font(s_font_time);
+  fonts_unload_custom_font(s_font_hr);
+  fonts_unload_custom_font(s_font_label_12);
+  fonts_unload_custom_font(s_font_label_14);
+  fonts_unload_custom_font(s_font_label_18);
+  fonts_unload_custom_font(s_font_label_24);
   layer_destroy(s_bg_layer);
   layer_destroy(s_weather_icon_layer);
   text_layer_destroy(s_temp_layer);
@@ -465,7 +616,17 @@ static void prv_window_unload(Window *window) {
 }
 
 static void prv_init(void) {
+  prv_load_settings();
   prv_load_history();
+
+  // Register health and tick services BEFORE pushing the window so that
+  // the initial HR read in window_load already has a sensor request in flight.
+  tick_timer_service_subscribe(MINUTE_UNIT | SECOND_UNIT, prv_tick_handler);
+
+#if defined(PBL_HEALTH)
+  health_service_events_subscribe(prv_health_handler, NULL);
+  health_service_set_heart_rate_sample_period(HR_SAMPLE_PERIOD_SEC);
+#endif
 
   s_window = window_create();
   window_set_background_color(s_window, GColorBlack);
@@ -474,13 +635,6 @@ static void prv_init(void) {
     .unload = prv_window_unload,
   });
   window_stack_push(s_window, true);
-
-  tick_timer_service_subscribe(MINUTE_UNIT, prv_tick_handler);
-
-#if defined(PBL_HEALTH)
-  health_service_events_subscribe(prv_health_handler, NULL);
-  health_service_set_heart_rate_sample_period(HR_SAMPLE_PERIOD_SEC);
-#endif
 
   app_message_register_inbox_received(prv_inbox_received);
   app_message_open(128, 32);
