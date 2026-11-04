@@ -49,7 +49,7 @@
     <label for="total">キューシートの総延長（km）</label>
     <input type="number" id="total" step="0.1" min="0" placeholder="例: 301.7">
     <div class="hint">主催者のキューシートに書かれた距離です。入れると、GPXの距離をこの値に合わせます。
-      空欄のままでも計算できます。その場合は、PCの距離を切り捨てて計算するので、閉時刻は公式より最大数分早くなります。</div>
+      空欄のままでも計算できますが、長いコースほど、GPXの距離と公式の距離の差が積み上がります。</div>
   </div>
 
   <button class="secondary" id="load_button">計画を作る</button>
@@ -62,7 +62,7 @@
         <thead><tr><th>地点</th><th>距離</th><th>開</th><th>閉(目安)</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
-      <div class="hint">ゴール以外の閉時刻は、認定の条件ではなく目安です。公式のキューシートの値と見比べてから保存してください。</div>
+      <div class="hint">ゴール以外の閉時刻は、認定の条件ではなく目安です。距離を切り捨てて計算するので、公式より数分早くなります。</div>
     </div>
     <button class="primary" id="save_button">保存して時計に送る</button>
   </div>
@@ -153,8 +153,7 @@
         tbody.appendChild(tr);
       });
       built.warnings.forEach(function (w) { showMessage('warn', w); });
-      showMessage('hint', '公称距離 ' + built.plan.nominal + 'km／総延長 ' + built.plan.total.toFixed(1) + 'km／PCの距離は' +
-                  (built.rounding === 'floor' ? '切り捨て' : '四捨五入') + 'で計算');
+      showMessage('hint', '公称距離 ' + built.plan.nominal + 'km／総延長 ' + built.plan.total.toFixed(1) + 'km');
       $('preview').style.display = 'block';
     });
   };

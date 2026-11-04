@@ -151,7 +151,7 @@
   // ---- 計画 --------------------------------------------------------------------
 
   // opts: startEpoch(秒、必須) / officialTotal(km、主催者のキューシートの総延長) / nominal(公称距離)
-  // 戻り値: { plan: 保存用, rows: 確認画面用, warnings: [], rounding: 'floor' | 'round' }
+  // 戻り値: { plan: 保存用, rows: 確認画面用, warnings: [] }
   function buildPlan(gpxText, opts) {
     var g = parseGpx(gpxText), pts = g.pts, n = pts.length, i, j;
     var warnings = [];
@@ -183,14 +183,11 @@
     }
     wps.sort(function (a, b) { return a.km - b.km; });
 
-    // 制限時刻は整数kmにして計算する。キューシートの総延長が分かっていれば四捨五入
-    // (BRM912の300kmで、公式の時刻と全地点で一致した)。分からなければ、GPXの距離を切り捨てる。
-    // 切り捨てだと、公式より最大数分早い、安全側の閉時刻になる。
-    var floorKm = !(opts.officialTotal > 0);
+    // 制限時刻は整数kmにして計算する。閉時刻は、距離を切り捨てて、公式より早め(安全側)にする。
+    // 開時刻は四捨五入のまま(BRM912とBRM813の公式の開時刻と、ほぼ一致する)。
     var rows = [], wp = [], used = {};
     for (i = 0; i < wps.length; i++) {
-      var di = floorKm ? Math.floor(wps[i].km) : rnd(wps[i].km);
-      var o = rnd(openMin(di)), c = rnd(closeMin(di));
+      var o = rnd(openMin(rnd(wps[i].km))), c = rnd(closeMin(Math.floor(wps[i].km)));
       var sn = shortName(wps[i].name, i);
       while (used[sn]) { sn = sn.slice(0, 4) + 'x'; }  // 同じ名前が重なったときの保険
       used[sn] = true;
@@ -208,8 +205,7 @@
         wp: wp, goal: goal, trk: encodeTrack(pts, cum, scale)
       },
       rows: rows,
-      warnings: warnings,
-      rounding: floorKm ? 'floor' : 'round'
+      warnings: warnings
     };
   }
 
@@ -305,7 +301,8 @@
     return {
       state: 1,
       km: km,
-      deadline: rnd(plan.start + Math.min(closeMin(km), goalClose) * 60),
+      // 距離を切り捨てて、制限時刻を早め(安全側)に出す
+      deadline: rnd(plan.start + Math.min(closeMin(Math.floor(km)), goalClose) * 60),
       nextName: nextName,
       nextDistDm: Math.max(0, rnd((nextKm - km) * 10)),
       goalDistDm: Math.max(0, rnd((plan.total - km) * 10))
