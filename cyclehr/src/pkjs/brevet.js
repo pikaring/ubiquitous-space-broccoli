@@ -12,12 +12,18 @@
 }(this, function () {
   'use strict';
 
-  // 開時刻の最高速度: 0-200km, 200-400km, 400-600km
-  var OPEN_SEGMENTS = [[200, 34], [200, 32], [200, 30]];
+  // 開時刻の最高速度: [区間の長さ(km), km/h]。0-200, 200-400, 400-600, 600-1000, 1000-1300km
+  var OPEN_SEGMENTS = [[200, 34], [200, 32], [200, 30], [400, 28], [300, 26]];
   // ゴールの制限時間(分)。公称距離ごとの規定値
-  var GOAL_LIMIT_MIN = { 200: 810, 300: 1200, 400: 1620, 600: 2400 };
-  // 保存するトラックの点の間隔(km)
-  var TRACK_STEP_KM = 0.2;
+  var GOAL_LIMIT_MIN = { 200: 810, 300: 1200, 400: 1620, 600: 2400, 1000: 4500, 1200: 5400 };
+  // 公称距離の範囲(km)
+  var NOMINAL_MIN = 100;
+  var NOMINAL_MAX = 1300;
+  // 保存するトラックの点の間隔(km)。長いコースでは、点の数が増えすぎないよう広げる
+  var TRACK_STEP_MIN_KM = 0.2;
+  var TRACK_MAX_POINTS = 2500;
+  // 計画から外すウェイポイント(スタートとゴールは別に扱う)
+  var SKIP_WPT = /^\s*(START|FINISH|GOAL|スタート|ゴール)/i;
   // 現在地の探索範囲: 前回の位置から戻る側(km)
   var SEARCH_BACK_KM = 2;
   // 進む側は、基本の余裕 + 時速45km × 前回からの経過時間。ただし上限あり
@@ -45,10 +51,13 @@
     return t * 60;
   }
 
-  // 最初の60kmは20km/hに1時間を足し、そこから先は15km/h
+  // 最初の60kmは20km/hに1時間を足し、60〜600kmは15km/h、
+  // 600〜1000kmは11.428km/h、1000〜1300kmは13.333km/h
   function closeMin(d) {
     if (d <= 60) { return d / 20 * 60 + 60; }
-    return d / 15 * 60;
+    if (d <= 600) { return d / 15 * 60; }
+    if (d <= 1000) { return 2400 + (d - 600) / 11.428 * 60; }
+    return 4500 + (d - 1000) / 13.333 * 60;
   }
 
   function hav(la1, lo1, la2, lo2) {
@@ -92,13 +101,18 @@
     return { pts: pts, wpts: wpts };
   }
 
-  // 時計のフォントで出せる短い名前にする。PC1、C1 など
-  function shortName(name) {
-    var m = /^(PC\s*\d+|通過\s*C\s*\d+|CP\s*\d+|C\s*\d+)/i.exec(name);
-    var s;
-    if (m) { return m[1].replace(/通過/, '').replace(/\s+/g, '').toUpperCase(); }
-    s = name.replace(/[^\x20-\x7e]/g, '').replace(/^\s+|\s+$/g, '').slice(0, 6);
-    return s || 'WP';
+  // 時計のフォントで出せる短い名前にする。
+  //   PC1 -> PC1 / 通過C1 -> C1 / 通過チェックB -> CB / 通過C-B -> CB
+  // どれにも当たらないときは、名前の英数字の部分、それもなければ W1、W2 ... にする。
+  function shortName(name, index) {
+    var m = /^\s*PC\s*[-－ー]?\s*(\d+)/i.exec(name);
+    if (m) { return 'PC' + m[1]; }
+    m = /^\s*通過\s*(?:C|CP|チェック(?:ポイント)?)\s*[-－ー]?\s*([A-Za-z0-9]+)/i.exec(name);
+    if (m) { return 'C' + m[1].toUpperCase(); }
+    m = /^\s*(CP?)\s*[-－ー]?\s*(\d+)/i.exec(name);
+    if (m) { return 'C' + m[2]; }
+    var s = name.replace(/[^A-Za-z0-9]/g, '').slice(0, 5);
+    return s || 'W' + (index + 1);
   }
 
   // ---- トラックの圧縮 ----------------------------------------------------------
@@ -106,9 +120,10 @@
   // 設定ページからURLで渡すので、URLエンコードで膨らまない文字だけを使う(0-9 a-z - .)
   function encodeTrack(pts, cum, scale) {
     var out = [], lastKm = -1e9, pl = 0, po = 0, pk = 0, n = pts.length, i, km, la, lo, k;
+    var step = Math.max(TRACK_STEP_MIN_KM, cum[n - 1] * scale / TRACK_MAX_POINTS);
     for (i = 0; i < n; i++) {
       km = cum[i] * scale;
-      if (i === 0 || i === n - 1 || km - lastKm >= TRACK_STEP_KM) {
+      if (i === 0 || i === n - 1 || km - lastKm >= step) {
         la = rnd(pts[i][0] * 1e5);
         lo = rnd(pts[i][1] * 1e5);
         k = rnd(km * 100);
@@ -148,8 +163,8 @@
     var scale = opts.officialTotal > 0 ? opts.officialTotal / cum[n - 1] : 1;
     var total = cum[n - 1] * scale;
     var nominal = opts.nominal || Math.floor(total / 100) * 100;
-    if (nominal < 100 || nominal > 600) {
-      throw new Error('公称距離が100〜600kmの範囲外です(' + nominal + 'km)');
+    if (nominal < NOMINAL_MIN || nominal > NOMINAL_MAX) {
+      throw new Error('公称距離が' + NOMINAL_MIN + '〜' + NOMINAL_MAX + 'kmの範囲外です(' + nominal + 'km)');
     }
     if (Math.abs(scale - 1) > 0.01) {
       warnings.push('GPXの距離と総延長が1%以上ずれています(補正倍率 ' + scale.toFixed(4) + ')');
@@ -157,6 +172,7 @@
 
     var wps = [], best, bi, d;
     for (j = 0; j < g.wpts.length; j++) {
+      if (SKIP_WPT.test(g.wpts[j].name)) { continue; }  // スタートとゴールは計画の両端で扱う
       best = 1e9; bi = 0;
       for (i = 0; i < n; i++) {
         d = hav(g.wpts[j].lat, g.wpts[j].lon, pts[i][0], pts[i][1]);
@@ -167,13 +183,17 @@
     }
     wps.sort(function (a, b) { return a.km - b.km; });
 
-    var rows = [], wp = [];
+    var rows = [], wp = [], used = {};
     for (i = 0; i < wps.length; i++) {
       var di = rnd(wps[i].km);  // 制限時刻は整数kmに丸めた距離で出す
       var o = rnd(openMin(di)), c = rnd(closeMin(di));
-      wp.push([shortName(wps[i].name), rnd(wps[i].km * 100) / 100, o, c]);
+      var sn = shortName(wps[i].name, i);
+      while (used[sn]) { sn = sn.slice(0, 4) + 'x'; }  // 同じ名前が重なったときの保険
+      used[sn] = true;
+      wp.push([sn, rnd(wps[i].km * 100) / 100, o, c]);
       rows.push({ name: wps[i].name, km: wps[i].km, openMin: o, closeMin: c });
     }
+    if (!wps.length) { warnings.push('ウェイポイントがありません。次の目標はゴールだけになります'); }
     var goalClose = GOAL_LIMIT_MIN[nominal] || rnd(closeMin(nominal));
     var goal = [rnd(total * 100) / 100, rnd(openMin(nominal)), goalClose];
     rows.push({ name: 'ゴール', km: total, openMin: goal[1], closeMin: goal[2] });

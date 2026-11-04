@@ -83,14 +83,15 @@
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
 
-  // スタートからの分 -> "HH:MM"（スタートの翌日以降は「翌」を付ける）
+  // スタートからの分 -> "HH:MM"。スタートの翌日は「翌」、2日後からは「+2日」のように付ける
   function clock(startEpoch, minutes) {
     var s = new Date(startEpoch * 1000);
     var d = new Date((startEpoch + minutes * 60) * 1000);
-    var day = new Date(d.getFullYear(), d.getMonth(), d.getDate()) -
-              new Date(s.getFullYear(), s.getMonth(), s.getDate());
+    var day = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) -
+                          new Date(s.getFullYear(), s.getMonth(), s.getDate())) / 86400000);
     var text = pad(d.getHours()) + ':' + pad(d.getMinutes());
-    return (day > 0 ? '翌' : '') + text;
+    if (day === 1) { return '翌' + text; }
+    return (day > 1 ? '+' + day + '日 ' : '') + text;
   }
 
   function showMessage(cls, text) {
@@ -152,9 +153,6 @@
         tbody.appendChild(tr);
       });
       built.warnings.forEach(function (w) { showMessage('warn', w); });
-      if (!built.plan.wp.length) {
-        showMessage('warn', 'ウェイポイントがありません。PCの位置が出ないので、次の目標はゴールだけになります。');
-      }
       showMessage('hint', '公称距離 ' + built.plan.nominal + 'km／総延長 ' + built.plan.total.toFixed(1) + 'km');
       $('preview').style.display = 'block';
     });

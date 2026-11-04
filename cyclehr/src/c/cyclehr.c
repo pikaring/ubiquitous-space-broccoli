@@ -233,9 +233,16 @@ static GColor prv_saving_color(int minutes) {
 #endif
 }
 
-// "+54m" / "-12m" (the signed %d is built by hand)
+// "+54m" / "-12m"; from 10 hours up (long brevets) "+25h" so that it still fits.
+// The signed %d is built by hand.
 static void prv_format_saving(char *buf, size_t size, int minutes, const char *suffix) {
-  snprintf(buf, size, "%s%dm%s", minutes < 0 ? "-" : "+", minutes < 0 ? -minutes : minutes, suffix);
+  const char *sign = minutes < 0 ? "-" : "+";
+  int a = minutes < 0 ? -minutes : minutes;
+  if (a >= 600) {
+    snprintf(buf, size, "%s%dh%s", sign, a / 60, suffix);
+  } else {
+    snprintf(buf, size, "%s%dm%s", sign, a, suffix);
+  }
 }
 
 // The weather row doubles as the brevet row while a brevet is set up
@@ -564,9 +571,11 @@ static void prv_window_load(Window *window) {
   s_sep_y[0] = y;
 
   // -- time row
-  const char *time_font = big ? FONT_KEY_LECO_42_NUMBERS : FONT_KEY_LECO_36_BOLD_NUMBERS;
-  int time_font_h = big ? 42 : 36;
-  int right_w = w * 30 / 100;
+  // 144px幅の機種(basalt/diorite)では、LECO_36の "02:38" が102pxで枠に入らないため、
+  // LECO_32(89px)にして、右の列(曜日・日付、ゴールまでの距離)を広げる
+  const char *time_font = big ? FONT_KEY_LECO_42_NUMBERS : FONT_KEY_LECO_32_BOLD_NUMBERS;
+  int time_font_h = big ? 42 : 32;
+  int right_w = big ? w * 30 / 100 : w * 36 / 100;
   s_time_layer = prv_make_text(root, GRect(2, y + (time_h - time_font_h) / 2 - 6, w - right_w, time_h),
                                time_font, GTextAlignmentLeft, "--:--");
   s_ampm_layer = prv_make_text(root, GRect(w - right_w, y + time_h / 2 - 18, right_w - 2, 18),
@@ -577,13 +586,17 @@ static void prv_window_load(Window *window) {
   s_sep_y[1] = y;
 
   // -- heart rate row
+  // 144px幅の機種では、"HEART RATE"(73px)が枠に入らず、3桁の心拍数とも重なるので短くする
   s_hr_label_layer = prv_make_text(root, GRect(4, y - 2, w / 2, 16),
-                                   FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentLeft, "HEART RATE");
+                                   FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentLeft,
+                                   big ? "HEART RATE" : "HEART");
   s_heart_layer = layer_create(GRect(8, y + 14, 34, hr_h - 16));
   layer_set_update_proc(s_heart_layer, prv_heart_update_proc);
   layer_add_child(root, s_heart_layer);
   int hr_font_h = 32;
-  s_hr_value_layer = prv_make_text(root, GRect(w / 2 - 14, y + (hr_h - hr_font_h) / 2 - 6, w / 2 - 18, hr_h),
+  // 右端は w-32 のまま。3桁の "188" は57pxなので、144px幅の機種でも64px以上の幅を取る
+  const int hr_value_w = (w / 2 - 18 > 64) ? (w / 2 - 18) : 64;
+  s_hr_value_layer = prv_make_text(root, GRect(w - 32 - hr_value_w, y + (hr_h - hr_font_h) / 2 - 6, hr_value_w, hr_h),
                                    FONT_KEY_LECO_32_BOLD_NUMBERS, GTextAlignmentRight, "--");
   s_hr_unit_layer = prv_make_text(root, GRect(w - 30, y + hr_h - 20, 30, 16),
                                   FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentLeft, "bpm");
