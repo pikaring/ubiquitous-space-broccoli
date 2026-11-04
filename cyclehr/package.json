@@ -14,7 +14,8 @@
     "targetPlatforms": [
       "basalt",
       "diorite",
-      "emery"
+      "emery",
+      "gabbro"
     ],
     "watchapp": {
       "watchface": true

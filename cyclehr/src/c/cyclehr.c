@@ -1,6 +1,10 @@
-// sys/types.h must come first: it provides time_t, which pebble.h needs but
-// cannot get from <time.h> because the SDK builds with -D_TIME_H_
+// Older SDKs (4.4): the build uses -D_TIME_H_, so time_t cannot come from <time.h>.
+// sys/types.h provides it, and must come first because pebble.h needs it.
+// Newer SDKs (4.33, needed for gabbro): time_t is already a macro (-Dtime_t=long),
+// and including sys/types.h would break it ("two or more data types").
+#ifndef time_t
 #include <sys/types.h>
+#endif
 #include <pebble.h>
 
 // ---------------------------------------------------------------------------
@@ -114,6 +118,8 @@ static int s_head = 0;
 
 // Section boundaries computed from the display size in prv_window_load
 static int s_sep_y[3];
+// Round displays: the separator lines are shortened by this much on each side (0 on rectangles)
+static int s_sep_inset[3];
 
 // --- HR helpers -------------------------------------------------------------
 
@@ -193,7 +199,7 @@ static void prv_update_time(void) {
     strftime(s_time_buf, sizeof(s_time_buf), "%H:%M", t);
     if (s_brevet_state == BREVET_RIDING) {
       // the AM/PM spot is free in 24h mode: show the distance to the goal
-      snprintf(s_ampm_buf, sizeof(s_ampm_buf), "%dkm", (s_goal_dist_dm + 5) / 10);
+      snprintf(s_ampm_buf, sizeof(s_ampm_buf), "%dkm", ((s_goal_dist_dm + 5) / 10) % 10000);
     } else {
       s_ampm_buf[0] = '\0';
     }
@@ -280,10 +286,10 @@ static void prv_update_brevet_row(void) {
     bool stale = (time(NULL) - s_fix_time) > BREVET_STALE_SEC;
     prv_format_saving(s_saving_buf, sizeof(s_saving_buf), saving, stale ? "?" : "");
     if (s_next_dist_dm >= 1000) {
-      snprintf(s_next_buf, sizeof(s_next_buf), "%s %dkm", s_next_name, s_next_dist_dm / 10);
+      snprintf(s_next_buf, sizeof(s_next_buf), "%s %dkm", s_next_name, (s_next_dist_dm / 10) % 100000);
     } else {
       snprintf(s_next_buf, sizeof(s_next_buf), "%s %d.%dkm", s_next_name,
-               s_next_dist_dm / 10, s_next_dist_dm % 10);
+               (s_next_dist_dm / 10) % 100000, s_next_dist_dm % 10);
     }
     left_color = prv_saving_color(saving);
   } else if (s_brevet_state == BREVET_BEFORE_START) {
@@ -311,7 +317,8 @@ static void prv_bg_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   graphics_context_set_stroke_color(ctx, GColorWhite);
   for (int i = 0; i < 3; i++) {
-    graphics_draw_line(ctx, GPoint(0, s_sep_y[i]), GPoint(b.size.w, s_sep_y[i]));
+    graphics_draw_line(ctx, GPoint(s_sep_inset[i], s_sep_y[i]),
+                       GPoint(b.size.w - s_sep_inset[i], s_sep_y[i]));
   }
 }
 
@@ -541,9 +548,9 @@ static TextLayer *prv_make_text(Layer *parent, GRect frame, const char *font_key
   return tl;
 }
 
-static void prv_window_load(Window *window) {
-  Layer *root = window_get_root_layer(window);
-  GRect bounds = layer_get_bounds(root);
+// Rectangular displays (basalt, diorite, emery)
+#if !defined(PBL_ROUND)
+static void prv_build_rect(Layer *root, GRect bounds) {
   const int w = bounds.size.w;
   const int h = bounds.size.h;
   const bool big = h >= 200;  // emery
@@ -627,6 +634,99 @@ static void prv_window_load(Window *window) {
   s_legend_layer = layer_create(GRect(2, y + 1, w - 2, legend_h));
   layer_set_update_proc(s_legend_layer, prv_legend_update_proc);
   layer_add_child(root, s_legend_layer);
+}
+#endif
+
+#if defined(PBL_ROUND)
+// Integer square root (the round layout needs the width of the circle at each height)
+static int prv_isqrt(int n) {
+  int x = 0;
+  while ((x + 1) * (x + 1) <= n) x++;
+  return x;
+}
+
+// How far in from the left and right edges the circle is at height y, plus a margin
+static int prv_chord_inset(int y, int size) {
+  const int r = size / 2;
+  int dy = y > r ? y - r : r - y;
+  return r - prv_isqrt(r * r - dy * dy) + 8;
+}
+
+// Round displays (gabbro, 260x260). The rows are placed by hand so that every text
+// stays inside the circle: the rows near the top and bottom are narrower.
+//   31-53 brevet / weather   56-106 time   106-154 heart rate
+//   152-168 label   168-212 chart   214-229 legend
+static void prv_build_round(Layer *root, GRect bounds) {
+  const int w = bounds.size.w;
+
+  s_bg_layer = layer_create(bounds);
+  layer_set_update_proc(s_bg_layer, prv_bg_update_proc);
+  layer_add_child(root, s_bg_layer);
+  s_sep_y[0] = 56;
+  s_sep_y[1] = 106;
+  s_sep_y[2] = 154;
+  for (int i = 0; i < 3; i++) {
+    s_sep_inset[i] = prv_chord_inset(s_sep_y[i], w);
+  }
+
+  // -- weather / brevet row
+  const int text_y = 31;
+  s_weather_icon_layer = layer_create(GRect(50, text_y - 1, 26, 24));
+  layer_set_update_proc(s_weather_icon_layer, prv_weather_icon_update_proc);
+  layer_add_child(root, s_weather_icon_layer);
+  s_temp_frame_weather = GRect(80, text_y, 52, 22);
+  s_cond_frame_weather = GRect(126, text_y, 86, 22);
+  s_brevet_right_font = FONT_KEY_GOTHIC_18_BOLD;
+  s_temp_frame_brevet = GRect(54, text_y, 64, 22);
+  s_cond_frame_brevet = GRect(112, text_y, 98, 22);
+  s_temp_layer = prv_make_text(root, s_temp_frame_weather,
+                               FONT_KEY_GOTHIC_18_BOLD, GTextAlignmentLeft, "--°C");
+  s_cond_layer = prv_make_text(root, s_cond_frame_weather,
+                               FONT_KEY_GOTHIC_18_BOLD, GTextAlignmentRight, "");
+
+  // -- time row
+  const int time_y = s_sep_y[0];
+  const int time_h = s_sep_y[1] - s_sep_y[0];
+  s_time_layer = prv_make_text(root, GRect(36, time_y + (time_h - 42) / 2 - 6, 124, time_h),
+                               FONT_KEY_LECO_42_NUMBERS, GTextAlignmentLeft, "--:--");
+  s_ampm_layer = prv_make_text(root, GRect(162, time_y + time_h / 2 - 18, 58, 18),
+                               FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentRight, "");
+  s_date_layer = prv_make_text(root, GRect(162, time_y + time_h / 2 - 2, 58, 18),
+                               FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentRight, "");
+
+  // -- heart rate row
+  const int hr_y = s_sep_y[1];
+  const int hr_h = s_sep_y[2] - s_sep_y[1];
+  s_hr_label_layer = prv_make_text(root, GRect(44, hr_y - 2, 120, 16),
+                                   FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentLeft, "HEART RATE");
+  s_heart_layer = layer_create(GRect(44, hr_y + 16, 34, 30));
+  layer_set_update_proc(s_heart_layer, prv_heart_update_proc);
+  layer_add_child(root, s_heart_layer);
+  s_hr_value_layer = prv_make_text(root, GRect(100, hr_y + (hr_h - 32) / 2 - 6, 88, hr_h),
+                                   FONT_KEY_LECO_32_BOLD_NUMBERS, GTextAlignmentRight, "--");
+  s_hr_unit_layer = prv_make_text(root, GRect(192, hr_y + hr_h - 20, 30, 16),
+                                  FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentLeft, "bpm");
+
+  // -- zones label, chart and legend
+  s_zones_label_layer = prv_make_text(root, GRect(0, s_sep_y[2] - 2, w, 16),
+                                      FONT_KEY_GOTHIC_14_BOLD, GTextAlignmentCenter, "1-MIN HR ZONES");
+  s_chart_layer = layer_create(GRect(38, s_sep_y[2] + 14, w - 76, 44));
+  layer_set_update_proc(s_chart_layer, prv_chart_update_proc);
+  layer_add_child(root, s_chart_layer);
+  s_legend_layer = layer_create(GRect(54, s_sep_y[2] + 60, w - 108, 15));
+  layer_set_update_proc(s_legend_layer, prv_legend_update_proc);
+  layer_add_child(root, s_legend_layer);
+}
+#endif
+
+static void prv_window_load(Window *window) {
+  Layer *root = window_get_root_layer(window);
+  GRect bounds = layer_get_bounds(root);
+#if defined(PBL_ROUND)
+  prv_build_round(root, bounds);
+#else
+  prv_build_rect(root, bounds);
+#endif
 
   prv_update_time();
   s_current_hr = prv_read_current_hr();
