@@ -73,7 +73,7 @@ static int s_current_hr = 0;
 // ---------------------------------------------------------------------------
 // Brevet progress. The phone (src/pkjs/brevet.js) works out the position along
 // the course and sends the result; the watch only shows it.
-//   While riding : weather row -> "+54m" (savings against the cutoff) and
+//   While riding : weather row -> "+0.9h" (savings against the cutoff) and
 //                  "PC3 12.5km" (next control); the AM/PM spot -> distance to goal.
 //   The cutoff time for the current position (s_deadline) is sent as an absolute
 //   time, so the savings keep counting down every minute between phone updates.
@@ -233,15 +233,24 @@ static GColor prv_saving_color(int minutes) {
 #endif
 }
 
-// "+54m" / "-12m"; from 10 hours up (long brevets) "+25h" so that it still fits.
+// Floor division that also rounds down for negative numbers (-1 / 6 -> -1)
+static int prv_floor_div(int a, int b) {
+  return a >= 0 ? a / b : -((-a + b - 1) / b);
+}
+
+// Savings are shown in hours only, so that "m" cannot be mistaken for metres:
+//   under 10 hours : 0.1 h (6 min) steps, e.g. 54 min -> "+0.9h", -13 min -> "-0.3h"
+//   10 hours and up: whole hours, e.g. "+25h"
+// Both round down (so a negative value rounds away from zero): the safe side.
 // The signed %d is built by hand.
 static void prv_format_saving(char *buf, size_t size, int minutes, const char *suffix) {
-  const char *sign = minutes < 0 ? "-" : "+";
-  int a = minutes < 0 ? -minutes : minutes;
-  if (a >= 600) {
-    snprintf(buf, size, "%s%dh%s", sign, a / 60, suffix);
+  int tenths = prv_floor_div(minutes, 6);
+  int a = tenths < 0 ? -tenths : tenths;
+  if (a >= 100) {
+    int hours = prv_floor_div(minutes, 60);
+    snprintf(buf, size, "%s%dh%s", hours < 0 ? "-" : "+", hours < 0 ? -hours : hours, suffix);
   } else {
-    snprintf(buf, size, "%s%dm%s", sign, a, suffix);
+    snprintf(buf, size, "%s%d.%dh%s", tenths < 0 ? "-" : "+", a / 10, a % 10, suffix);
   }
 }
 
@@ -413,9 +422,9 @@ static void prv_chart_update_proc(Layer *layer, GContext *ctx) {
   graphics_draw_line(ctx, GPoint(0, chart_h), GPoint(b.size.w, chart_h));
   graphics_context_set_text_color(ctx, GColorWhite);
   GRect line = GRect(0, chart_h - 2, b.size.w, axis_h);
-  graphics_draw_text(ctx, "60m ago", small, line,
+  graphics_draw_text(ctx, "1h ago", small, line,
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
-  graphics_draw_text(ctx, "30m", small, line,
+  graphics_draw_text(ctx, "0.5h", small, line,
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
   graphics_draw_text(ctx, "Now", small, line,
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
