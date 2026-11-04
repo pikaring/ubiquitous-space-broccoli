@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CycleHR ブルベ設定</title>
+<style>
+  body { font-family: sans-serif; background-color: #f0f0f0; padding: 16px; color: #333; }
+  .container { max-width: 480px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+  h1 { font-size: 1.2rem; text-align: center; margin: 0 0 16px; }
+  .group { margin-bottom: 18px; }
+  label { display: block; margin-bottom: 6px; font-weight: bold; font-size: 14px; }
+  .hint { font-size: 12px; color: #777; margin-top: 4px; line-height: 1.5; }
+  input[type=file], input[type=datetime-local], input[type=number] {
+    width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px;
+    border: 1px solid #ccc; border-radius: 5px; background: #fff;
+  }
+  button { width: 100%; padding: 14px; border: none; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+  button.primary { background-color: #FF5500; color: #fff; }
+  button.primary:active { background-color: #AA3300; }
+  button.secondary { background-color: #e6e6e6; color: #333; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  th, td { padding: 6px 4px; border-bottom: 1px solid #eee; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  td:not(:first-child) { white-space: nowrap; }
+  .warn { background: #fff3cd; border-left: 4px solid #e0a800; padding: 8px 10px; margin-top: 10px; font-size: 13px; line-height: 1.5; }
+  .error { background: #f8d7da; border-left: 4px solid #c0392b; padding: 8px 10px; margin-top: 10px; font-size: 13px; line-height: 1.5; }
+  #preview { display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>CycleHR ブルベ設定</h1>
+
+  <div class="group">
+    <label for="gpx">コースのGPX</label>
+    <input type="file" id="gpx" accept=".gpx,application/gpx+xml,text/xml">
+    <div class="hint">通過チェックとPCがウェイポイントに入っているGPXを選びます（RWGPSの書き出しなど）。</div>
+  </div>
+
+  <div class="group">
+    <label for="start">スタート日時</label>
+    <input type="datetime-local" id="start">
+    <div class="hint">このスマホの時刻で解釈します。</div>
+  </div>
+
+  <div class="group">
+    <label for="total">キューシートの総延長（km）</label>
+    <input type="number" id="total" step="0.1" min="0" placeholder="例: 301.7">
+    <div class="hint">主催者のキューシートに書かれた距離です。入れると、GPXの距離をこの値に合わせます。
+      空欄のままだと、PCの制限時刻が公式と数分ずれることがあります。</div>
+  </div>
+
+  <button class="secondary" id="load_button">計画を作る</button>
+  <div id="messages"></div>
+
+  <div id="preview">
+    <div class="group" style="margin-top:18px;">
+      <label>制限時刻の確認</label>
+      <table>
+        <thead><tr><th>地点</th><th>距離</th><th>開</th><th>閉</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="hint">公式のキューシートの値と見比べてから保存してください。</div>
+    </div>
+    <button class="primary" id="save_button">保存して時計に送る</button>
+  </div>
+
+  <button class="secondary" id="clear_button" style="margin-top:24px;">ブルベの設定を消す</button>
+</div>
+
+<script src="src/pkjs/brevet.js"></script>
+<script>
+  var built = null;
+
+  function $(id) { return document.getElementById(id); }
+
+  function getQueryParam(name, defaultValue) {
+    var m = new RegExp('[?&]' + name + '=([^&#]*)').exec(location.search);
+    return m ? decodeURIComponent(m[1]) : defaultValue;
+  }
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  // スタートからの分 -> "HH:MM"（スタートの翌日以降は「翌」を付ける）
+  function clock(startEpoch, minutes) {
+    var s = new Date(startEpoch * 1000);
+    var d = new Date((startEpoch + minutes * 60) * 1000);
+    var day = new Date(d.getFullYear(), d.getMonth(), d.getDate()) -
+              new Date(s.getFullYear(), s.getMonth(), s.getDate());
+    var text = pad(d.getHours()) + ':' + pad(d.getMinutes());
+    return (day > 0 ? '翌' : '') + text;
+  }
+
+  function showMessage(cls, text) {
+    var div = document.createElement('div');
+    div.className = cls;
+    div.textContent = text;
+    $('messages').appendChild(div);
+  }
+
+  function remember() {
+    try {
+      localStorage.setItem('cyclehr.config', JSON.stringify({ start: $('start').value, total: $('total').value }));
+    } catch (e) { /* 保存できなくても動く */ }
+  }
+
+  function restore() {
+    try {
+      var c = JSON.parse(localStorage.getItem('cyclehr.config'));
+      if (c) { $('start').value = c.start || ''; $('total').value = c.total || ''; }
+    } catch (e) { /* 何もしない */ }
+  }
+
+  function readFile(file, callback) {
+    var reader = new FileReader();
+    reader.onload = function () { callback(reader.result); };
+    reader.onerror = function () { showMessage('error', 'GPXを読み込めませんでした。'); };
+    reader.readAsText(file);
+  }
+
+  $('load_button').onclick = function () {
+    $('messages').innerHTML = '';
+    $('preview').style.display = 'none';
+    built = null;
+
+    var file = $('gpx').files[0];
+    if (!file) { showMessage('error', 'GPXファイルを選んでください。'); return; }
+    if (!$('start').value) { showMessage('error', 'スタート日時を入れてください。'); return; }
+    var startEpoch = Math.floor(new Date($('start').value).getTime() / 1000);
+    var total = parseFloat($('total').value);
+
+    readFile(file, function (text) {
+      try {
+        built = Brevet.buildPlan(text, { startEpoch: startEpoch, officialTotal: isNaN(total) ? 0 : total });
+      } catch (e) {
+        showMessage('error', e.message);
+        return;
+      }
+      remember();
+      var tbody = $('rows');
+      tbody.innerHTML = '';
+      built.rows.forEach(function (r) {
+        var tr = document.createElement('tr');
+        [r.name, r.km.toFixed(1) + 'km', clock(startEpoch, r.openMin), clock(startEpoch, r.closeMin)]
+          .forEach(function (v) {
+            var td = document.createElement('td');
+            td.textContent = v;
+            tr.appendChild(td);
+          });
+        tbody.appendChild(tr);
+      });
+      built.warnings.forEach(function (w) { showMessage('warn', w); });
+      if (!built.plan.wp.length) {
+        showMessage('warn', 'ウェイポイントがありません。PCの位置が出ないので、次の目標はゴールだけになります。');
+      }
+      showMessage('hint', '公称距離 ' + built.plan.nominal + 'km／総延長 ' + built.plan.total.toFixed(1) + 'km');
+      $('preview').style.display = 'block';
+    });
+  };
+
+  function finish(payload) {
+    var returnTo = getQueryParam('return_to', 'pebblejs://close#');
+    document.location = returnTo + encodeURIComponent(JSON.stringify(payload));
+  }
+
+  $('save_button').onclick = function () {
+    if (built) { finish({ plan: built.plan }); }
+  };
+
+  $('clear_button').onclick = function () {
+    finish({ clear: true });
+  };
+
+  restore();
+</script>
+</body>
+</html>

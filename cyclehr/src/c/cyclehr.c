@@ -60,7 +60,7 @@ static Layer *s_chart_layer;
 static Layer *s_legend_layer;
 
 static char s_time_buf[8];
-static char s_ampm_buf[4];
+static char s_ampm_buf[8];
 static char s_date_buf[12];
 static char s_hr_buf[12];
 static char s_temp_buf[8];
@@ -69,6 +69,43 @@ static char s_cond_buf[16];
 static int s_weather_icon = ICON_SUN;
 static bool s_weather_valid = false;
 static int s_current_hr = 0;
+
+// ---------------------------------------------------------------------------
+// Brevet progress. The phone (src/pkjs/brevet.js) works out the position along
+// the course and sends the result; the watch only shows it.
+//   While riding : weather row -> "+54m" (savings against the cutoff) and
+//                  "PC3 12.5km" (next control); the AM/PM spot -> distance to goal.
+//   The cutoff time for the current position (s_deadline) is sent as an absolute
+//   time, so the savings keep counting down every minute between phone updates.
+// ---------------------------------------------------------------------------
+
+enum {
+  BREVET_OFF = 0,
+  BREVET_RIDING = 1,
+  BREVET_BEFORE_START = 2,
+  BREVET_FINISHED = 3,
+};
+
+// If the last position fix is older than this, "?" is added to the savings
+#define BREVET_STALE_SEC 600
+
+static int s_brevet_state = BREVET_OFF;
+static int32_t s_deadline = 0;      // RIDING: cutoff at the current position / BEFORE_START: start time (epoch)
+static int s_saving_final = 0;      // FINISHED: savings at the goal (minutes)
+static char s_next_name[8];
+static int s_next_dist_dm = 0;      // 0.1 km units
+static int s_goal_dist_dm = 0;
+static time_t s_fix_time = 0;       // when the phone took the position fix
+
+static char s_saving_buf[12];
+static char s_next_buf[20];
+
+// Weather row frames: weather mode and brevet mode (set in prv_window_load)
+static GRect s_temp_frame_weather;
+static GRect s_cond_frame_weather;
+static GRect s_temp_frame_brevet;
+static GRect s_cond_frame_brevet;
+static const char *s_brevet_right_font = FONT_KEY_GOTHIC_14_BOLD;
 
 // Circular buffer of 1-minute HR samples; s_head is the next write slot,
 // so oldest sample is s_history[s_head] and newest is s_history[s_head-1].
@@ -154,7 +191,12 @@ static void prv_update_time(void) {
 
   if (clock_is_24h_style()) {
     strftime(s_time_buf, sizeof(s_time_buf), "%H:%M", t);
-    s_ampm_buf[0] = '\0';
+    if (s_brevet_state == BREVET_RIDING) {
+      // the AM/PM spot is free in 24h mode: show the distance to the goal
+      snprintf(s_ampm_buf, sizeof(s_ampm_buf), "%dkm", (s_goal_dist_dm + 5) / 10);
+    } else {
+      s_ampm_buf[0] = '\0';
+    }
   } else {
     strftime(s_time_buf, sizeof(s_time_buf), "%I:%M", t);
     if (s_time_buf[0] == '0') {
@@ -170,6 +212,81 @@ static void prv_update_time(void) {
     if (*p >= 'a' && *p <= 'z') *p -= 'a' - 'A';
   }
   text_layer_set_text(s_date_layer, s_date_buf);
+}
+
+// --- brevet -------------------------------------------------------------------
+
+// Minutes from now until `target` (epoch seconds). Negative when it has passed.
+static int prv_minutes_until(int32_t target) {
+  int32_t d = target - (int32_t)time(NULL);
+  return d >= 0 ? (int)(d / 60) : -(int)((-d + 59) / 60);
+}
+
+static GColor prv_saving_color(int minutes) {
+#if defined(PBL_COLOR)
+  if (minutes < 0) return GColorRed;
+  if (minutes < 30) return GColorYellow;
+  return GColorGreen;
+#else
+  (void)minutes;
+  return GColorWhite;
+#endif
+}
+
+// "+54m" / "-12m" (the signed %d is built by hand)
+static void prv_format_saving(char *buf, size_t size, int minutes, const char *suffix) {
+  snprintf(buf, size, "%s%dm%s", minutes < 0 ? "-" : "+", minutes < 0 ? -minutes : minutes, suffix);
+}
+
+// The weather row doubles as the brevet row while a brevet is set up
+static void prv_update_brevet_row(void) {
+  if (s_brevet_state == BREVET_OFF) {
+    layer_set_hidden(s_weather_icon_layer, false);
+    layer_set_frame(text_layer_get_layer(s_temp_layer), s_temp_frame_weather);
+    layer_set_frame(text_layer_get_layer(s_cond_layer), s_cond_frame_weather);
+    text_layer_set_font(s_cond_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
+    text_layer_set_text_color(s_temp_layer, GColorWhite);
+    text_layer_set_text_color(s_cond_layer, GColorWhite);
+    text_layer_set_text(s_temp_layer, s_temp_buf[0] ? s_temp_buf : "--°C");
+    text_layer_set_text(s_cond_layer, s_cond_buf);
+    return;
+  }
+
+  layer_set_hidden(s_weather_icon_layer, true);
+  layer_set_frame(text_layer_get_layer(s_temp_layer), s_temp_frame_brevet);
+  layer_set_frame(text_layer_get_layer(s_cond_layer), s_cond_frame_brevet);
+  text_layer_set_font(s_cond_layer, fonts_get_system_font(s_brevet_right_font));
+  GColor left_color = GColorWhite;
+  GColor right_color = GColorWhite;
+
+  if (s_brevet_state == BREVET_RIDING) {
+    int saving = prv_minutes_until(s_deadline);
+    bool stale = (time(NULL) - s_fix_time) > BREVET_STALE_SEC;
+    prv_format_saving(s_saving_buf, sizeof(s_saving_buf), saving, stale ? "?" : "");
+    if (s_next_dist_dm >= 1000) {
+      snprintf(s_next_buf, sizeof(s_next_buf), "%s %dkm", s_next_name, s_next_dist_dm / 10);
+    } else {
+      snprintf(s_next_buf, sizeof(s_next_buf), "%s %d.%dkm", s_next_name,
+               s_next_dist_dm / 10, s_next_dist_dm % 10);
+    }
+    left_color = prv_saving_color(saving);
+  } else if (s_brevet_state == BREVET_BEFORE_START) {
+    time_t start = (time_t)s_deadline;
+    struct tm *t = localtime(&start);
+    snprintf(s_saving_buf, sizeof(s_saving_buf), "START");
+    snprintf(s_next_buf, sizeof(s_next_buf), "%d/%d %d:%02d",
+             t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
+  } else {  // BREVET_FINISHED
+    snprintf(s_saving_buf, sizeof(s_saving_buf), "GOAL!");
+    prv_format_saving(s_next_buf, sizeof(s_next_buf), s_saving_final, "");
+    left_color = PBL_IF_COLOR_ELSE(GColorGreen, GColorWhite);
+    right_color = prv_saving_color(s_saving_final);
+  }
+
+  text_layer_set_text_color(s_temp_layer, left_color);
+  text_layer_set_text_color(s_cond_layer, right_color);
+  text_layer_set_text(s_temp_layer, s_saving_buf);
+  text_layer_set_text(s_cond_layer, s_next_buf);
 }
 
 // --- drawing ----------------------------------------------------------------
@@ -324,6 +441,13 @@ static void prv_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   s_current_hr = prv_read_current_hr();
   prv_update_hr_text();
   prv_record_sample();
+
+  // the savings count down with the clock between phone updates
+  prv_update_brevet_row();
+  // hourly progress: buzz on the hour while riding
+  if (s_brevet_state == BREVET_RIDING && tick_time->tm_min == 0) {
+    vibes_double_pulse();
+  }
 }
 
 #if defined(PBL_HEALTH)
@@ -335,24 +459,56 @@ static void prv_health_handler(HealthEventType event, void *context) {
 }
 #endif
 
+static void prv_handle_brevet(DictionaryIterator *iter, Tuple *state) {
+  Tuple *t;
+  s_brevet_state = (int)state->value->int32;
+  if ((t = dict_find(iter, MESSAGE_KEY_DEADLINE))) {
+    s_deadline = t->value->int32;
+  }
+  if ((t = dict_find(iter, MESSAGE_KEY_SAVING_MIN))) {
+    s_saving_final = (int)t->value->int32;
+  }
+  if ((t = dict_find(iter, MESSAGE_KEY_NEXT_NAME))) {
+    snprintf(s_next_name, sizeof(s_next_name), "%s", t->value->cstring);
+  }
+  if ((t = dict_find(iter, MESSAGE_KEY_NEXT_DIST))) {
+    s_next_dist_dm = (int)t->value->int32;
+  }
+  if ((t = dict_find(iter, MESSAGE_KEY_GOAL_DIST))) {
+    s_goal_dist_dm = (int)t->value->int32;
+  }
+  if ((t = dict_find(iter, MESSAGE_KEY_FIX_TIME))) {
+    s_fix_time = (time_t)t->value->int32;
+  }
+  prv_update_brevet_row();
+  prv_update_time();  // refreshes the distance to the goal in the AM/PM spot
+}
+
 static void prv_inbox_received(DictionaryIterator *iter, void *context) {
+  Tuple *brevet = dict_find(iter, MESSAGE_KEY_BREVET_STATE);
+  if (brevet) {
+    prv_handle_brevet(iter, brevet);
+  }
+
   Tuple *temp = dict_find(iter, MESSAGE_KEY_TEMPERATURE);
   Tuple *cond = dict_find(iter, MESSAGE_KEY_CONDITIONS);
   Tuple *icon = dict_find(iter, MESSAGE_KEY_ICON);
 
   if (temp) {
     snprintf(s_temp_buf, sizeof(s_temp_buf), "%d°C", (int)temp->value->int32);
-    text_layer_set_text(s_temp_layer, s_temp_buf);
   }
   if (cond) {
     snprintf(s_cond_buf, sizeof(s_cond_buf), "%s", cond->value->cstring);
-    text_layer_set_text(s_cond_layer, s_cond_buf);
   }
   if (icon) {
     s_weather_icon = (int)icon->value->int32;
   }
-  s_weather_valid = true;
-  layer_mark_dirty(s_weather_icon_layer);
+  if (temp || cond || icon) {
+    s_weather_valid = true;
+    layer_mark_dirty(s_weather_icon_layer);
+    // while a brevet is shown, the weather stays hidden; otherwise show it now
+    prv_update_brevet_row();
+  }
 }
 
 // --- window -------------------------------------------------------------------
@@ -392,9 +548,17 @@ static void prv_window_load(Window *window) {
   layer_set_update_proc(s_weather_icon_layer, prv_weather_icon_update_proc);
   layer_add_child(root, s_weather_icon_layer);
   int text_y = y + (weather_h - 22) / 2 - 2;
-  s_temp_layer = prv_make_text(root, GRect(weather_h + 4, text_y, w * 35 / 100, 22),
+  s_temp_frame_weather = GRect(weather_h + 4, text_y, w * 35 / 100, 22);
+  s_cond_frame_weather = GRect(w / 2 - 4, text_y, w / 2, 22);
+  // brevet mode: no icon, so the two texts use the whole row
+  const int brevet_left_w = w * 45 / 100;
+  s_brevet_right_font = big ? FONT_KEY_GOTHIC_18_BOLD : FONT_KEY_GOTHIC_14_BOLD;
+  s_temp_frame_brevet = GRect(3, text_y, brevet_left_w, 22);
+  s_cond_frame_brevet = GRect(brevet_left_w + 3, text_y + (big ? 0 : 3),
+                              w - brevet_left_w - 5, 22);
+  s_temp_layer = prv_make_text(root, s_temp_frame_weather,
                                FONT_KEY_GOTHIC_18_BOLD, GTextAlignmentLeft, "--°C");
-  s_cond_layer = prv_make_text(root, GRect(w / 2 - 4, text_y, w / 2, 22),
+  s_cond_layer = prv_make_text(root, s_cond_frame_weather,
                                FONT_KEY_GOTHIC_18_BOLD, GTextAlignmentRight, "");
   y += weather_h;
   s_sep_y[0] = y;
@@ -445,6 +609,7 @@ static void prv_window_load(Window *window) {
   prv_update_time();
   s_current_hr = prv_read_current_hr();
   prv_update_hr_text();
+  prv_update_brevet_row();
 }
 
 static void prv_window_unload(Window *window) {

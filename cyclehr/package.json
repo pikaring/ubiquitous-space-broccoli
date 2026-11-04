@@ -22,7 +22,14 @@
     "messageKeys": [
       "TEMPERATURE",
       "CONDITIONS",
-      "ICON"
+      "ICON",
+      "BREVET_STATE",
+      "DEADLINE",
+      "NEXT_NAME",
+      "NEXT_DIST",
+      "GOAL_DIST",
+      "SAVING_MIN",
+      "FIX_TIME"
     ],
     "resources": {
       "media": []
